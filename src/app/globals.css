@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@theme {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-glass-surface: rgba(255, 255, 255, 0.03);
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+  --color-glass-highlight: rgba(255, 255, 255, 0.12);
+
+  --blur-xs: 2px;
+  --blur-xl: 20px;
+  --blur-2xl: 40px;
+
+  --animate-pulse-slow: pulse 6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-aurora: aurora 20s linear infinite;
+
+  @keyframes aurora {
+    from {
+      background-position: 50% 50%, 50% 50%;
+    }
+
+    to {
+      background-position: 350% 50%, 350% 50%;
+    }
+  }
+}
+
+:root {
+  --background: #020617;
+  /* Deep Slate 950 */
+  --foreground: #f8fafc;
+  /* Slate 50 */
+
+  --chart-1: #6366f1;
+  /* Indigo 500 */
+  --chart-2: #10b981;
+  /* Emerald 500 */
+  --chart-3: #f59e0b;
+  /* Amber 500 */
+  --chart-4: #ef4444;
+  /* Red 500 */
+  --chart-5: #ec4899;
+  /* Pink 500 */
+}
+
+@layer base {
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    @apply antialiased min-h-screen selection:bg-indigo-500/30;
+  }
+}
+
+.text-glow-silver {
+  text-shadow: 0 0 10px rgba(248, 250, 252, 0.4);
+}
+
+.text-glow-blue {
+  text-shadow: 0 0 12px rgba(56, 189, 248, 0.5);
+}
+
+.text-glow-amber {
+  text-shadow: 0 0 12px rgba(245, 158, 11, 0.5);
+}
+
+.logo-shadow {
+  filter: drop-shadow(0 0 15px rgba(203, 213, 225, 0.4)) drop-shadow(0 0 30px rgba(148, 163, 184, 0.2));
+}
+
+.recharts-responsive-container {
+  mask-image: linear-gradient(to right, transparent, black 1%, black 99%, transparent);
+}
+
+/* Redefine ambient glow to be slate/grey */
+.animate-pulse-slow {
+  animation: pulse 8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 0.1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.2;
+    transform: scale(1.05);
+  }
+}
+
+.bg-indigo-500\/10 {
+  background-color: rgba(148, 163, 184, 0.05);
+}
+
+.bg-emerald-500\/10 {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+@layer utilities {
+  .glass-card {
+    @apply bg-glass-surface backdrop-blur-xl border border-glass-border shadow-2xl;
+  }
+
+  .glass-morphism {
+    background: rgba(255, 255, 255, 0.03);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px rgba(99, 102, 241, 0.5), 0 0 20px rgba(99, 102, 241, 0.3);
+  }
+
+  .bg-aurora {
+    background-image:
+      radial-gradient(circle at 100% 100%, rgba(99, 102, 241, 0.15) 0, transparent 50%),
+      radial-gradient(circle at 0% 0%, rgba(16, 185, 129, 0.1) 0, transparent 50%);
+    background-size: 200% 200%;
+  }
+}

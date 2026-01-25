@@ -1,0 +1,25 @@
+<svg width="500" height="600" viewBox="0 0 500 600" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="stoneBodyGrad" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" style="stop-color:#7b8c9e;stop-opacity:1" /> <stop offset="60%" style="stop-color:#3b4550;stop-opacity:1" /> <stop offset="100%" style="stop-color:#1a1f24;stop-opacity:1" /> </linearGradient>
+    
+    <linearGradient id="noseBridgeGrad" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" style="stop-color:#4a5560;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#5e6b75;stop-opacity:1" /> <stop offset="100%" style="stop-color:#4a5560;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+
+
+  <path d="M160,60 C160,30 340,30 340,60 L370,200 C385,350 360,520 320,560 L180,560 C140,520 115,350 130,200 Z" fill="url(#stoneBodyGrad)" />
+
+  <path d="M135,190 L365,190 L355,240 C300,265 200,265 145,240 Z" fill="#020204" />
+  
+  <path d="M220,410 L280,410 L295,460 L205,460 Z" fill="#050608" />
+
+  <path d="M235,190 L265,190 L275,410 L225,410 Z" fill="url(#noseBridgeGrad)" />
+
+  <path d="M150,185 L350,185 L350,192 L150,192 Z" fill="#dceef5" opacity="0.95" />
+  <rect x="248" y="190" width="4" height="220" fill="#dceef5" opacity="0.6" />
+  
+  <path d="M225,480 L275,480 L270,530 L230,530 Z" fill="#2f353b" />
+  <path d="M230,480 L270,480" stroke="#1a1f24" stroke-width="3" opacity="0.8"/> </svg>
