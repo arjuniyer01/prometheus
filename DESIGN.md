@@ -8,13 +8,13 @@ The domain of financial market research has historically been characterized by a
 
 The Prometheus Financial Intelligence Platform represents a distinct architectural evolution designed to bridge this chasm. By leveraging the convergence of three technological inflection points—serverless edge computing, commoditized real-time financial data, and frontier-class multimodal Artificial Intelligence—Prometheus aims to democratize institutional-grade analysis. The system is not merely a data aggregator; it is an *intelligence engine* designed to synthesize unlimited heterogeneous data sources (standardized financials, unstructured regulatory filings, news feeds, and social sentiment) into a unified, "Single View" dashboard.
 
-The core value proposition of Prometheus rests on the integration of **Gemini 3 Flash**, Google’s frontier multimodal model released in late 2025\.2 Unlike previous generations of Large Language Models (LLMs) that required complex Retrieval-Augmented Generation (RAG) pipelines to handle large documents, Gemini 3 Flash’s 1 million token context window allows for the holistic ingestion of entire 10-K annual reports, earnings call transcripts, and months of news history in a single inference pass.4 This capability enables the system to produce "layman terms" summaries that identify second-order correlations—such as the link between a supply chain risk buried in a footnote and a sudden spike in negative social sentiment—that human analysts might miss due to information overload.
+The core value proposition of Prometheus rests on the integration of **Gemini 2.5 Flash Lite**, Google’s frontier multimodal model released in late 2025\.2 Unlike previous generations of Large Language Models (LLMs) that required complex Retrieval-Augmented Generation (RAG) pipelines to handle large documents, Gemini 2.5 Flash Lite’s 1 million token context window allows for the holistic ingestion of entire 10-K annual reports, earnings call transcripts, and months of news history in a single inference pass.4 This capability enables the system to produce "layman terms" summaries that identify second-order correlations—such as the link between a supply chain risk buried in a footnote and a sudden spike in negative social sentiment—that human analysts might miss due to information overload.
 
 ### **1.2 Design Philosophy: Aggregated Truth and Visual Clarity**
 
 The architectural philosophy governing Prometheus is built upon the concept of "Aggregated Truth." In modern markets, price action is rarely a function of fundamental valuation alone; it is the vector sum of regulatory constraints, macroeconomic shifts, and mass psychology. Therefore, a research platform cannot isolate these vectors. The architecture must ingest data from **Financial Modeling Prep (FMP)** for hard numbers 5, the **SEC EDGAR** system for regulatory truth 6, **Finnhub** for news sentiment 7, and social aggregators for retail psychology.
 
-To visualize this multi-dimensional dataset without overwhelming the user, the frontend employs a **Glassmorphism** design system.8 This is not a purely aesthetic choice but a functional one. By utilizing translucency, background blur, and depth hierarchies, the interface allows users to perceive data layering—seeing "through" the immediate price action to the underlying news or sentiment trends that support it. The "Single View" requirement mandates a Bento Grid layout where no critical information is hidden behind a scroll or a click, necessitating a high-performance rendering engine capable of managing dense information layouts without visual clutter.
+To visualize this multi-dimensional dataset without overwhelming the user, the frontend employs an **Institutional Monochrome** design system. This is not a purely aesthetic choice but a functional one. Digital assets like the "Engineer" monolith (`engineer.svg`) provide a grounded, high-presence brand identity. By utilizing translucency, background blur, and depth hierarchies, the interface allows users to perceive data layering—seeing "through" the immediate price action to the underlying news or sentiment trends that support it. The "Single View" requirement mandates a Bento Grid layout where no critical information is hidden behind a scroll or a click, necessitating a high-performance rendering engine capable of managing dense information layouts without visual clutter.
 
 ### **1.3 Technical Stack Selection and Justification**
 
@@ -24,7 +24,7 @@ The technology stack for Prometheus is selected to optimize for scalability, dev
 * **Deployment Infrastructure: Vercel**: Vercel provides the optimal environment for Next.js, offering zero-configuration global edge scaling. However, the constraints of serverless functions (specifically the 10-60 second execution timeouts) necessitate a robust asynchronous architecture for long-running data ingestion tasks.10  
 * **Backend Persistence: Supabase**: As an open-source Firebase alternative built on PostgreSQL, Supabase provides the relational integrity required for financial time-series data while offering jsonb flexibility for unstructured API responses.11 Its built-in Realtime engine (via PostgreSQL replication) replaces legacy polling mechanisms, pushing price and sentiment updates to the client instantly.9  
 * **Orchestration: Inngest**: To circumvent Vercel’s timeout limits during intensive tasks—such as scraping and parsing a 200-page SEC XBRL filing—Inngest is utilized as a reliable event queue. It allows for "fan-out" workflows where a single user request triggers parallel fetching jobs that run asynchronously, updating the UI upon completion.12  
-* **AI Intelligence: Gemini 3 Flash**: Chosen over GPT-4o or Claude 3.5 Sonnet primarily for its cost-to-performance ratio in long-context tasks. At $0.50 per 1 million input tokens 13, Gemini 3 Flash makes it economically viable to process full financial reports for every user request, a feat that would be cost-prohibitive with other models.
+* **AI Intelligence: Gemini 2.5 Flash Lite**: Chosen over GPT-4o or Claude 3.5 Sonnet primarily for its cost-to-performance ratio in long-context tasks. At $0.50 per 1 million input tokens 13, Gemini 2.5 Flash Lite makes it economically viable to process full financial reports for every user request, a feat that would be cost-prohibitive with other models.
 
 ## ---
 
@@ -81,15 +81,15 @@ The ingestion system, internally codenamed "Hydra," is responsible for normalizi
 
 ## ---
 
-**3\. The Intelligence Engine: Gemini 3 Flash Integration**
+**3\. The Intelligence Engine: Gemini 2.5 Flash Lite Integration**
 
-### **3.1 The Strategic Advantage of Gemini 3 Flash**
+### **3.1 The Strategic Advantage of Gemini 2.5 Flash Lite**
 
-The release of **Gemini 3 Flash** in late 2025 marked a pivotal moment for AI-driven financial analysis. Prior models faced a "Context Dilemma": high-intelligence models (like GPT-4) were too expensive and slow for full-document analysis, while fast models lacked the reasoning capabilities to interpret nuances in financial footnotes. Gemini 3 Flash resolves this with three key attributes:
+The release of **Gemini 2.5 Flash Lite** in late 2025 marked a pivotal moment for AI-driven financial analysis. Prior models faced a "Context Dilemma": high-intelligence models (like GPT-4) were too expensive and slow for full-document analysis, while fast models lacked the reasoning capabilities to interpret nuances in financial footnotes. Gemini 2.5 Flash Lite resolves this with three key attributes:
 
 1. **1 Million Token Context Window**: This allows the system to ingest roughly 700,000 words of text in a single prompt.3 A typical 10-K annual report is 100,000 words. This means Prometheus can feed the model the last *five* years of annual reports plus recent news, all at once.  
 2. **Cost Efficiency**: Priced at approximately $0.50 per 1 million input tokens 13, analyzing a full annual report costs roughly $0.05. This is orders of magnitude cheaper than equivalent processing with GPT-4o, making it feasible to offer this analysis to every user on demand.  
-3. **Multimodal Capabilities**: Gemini 3 Flash can ingest images and charts.24 This allows Prometheus to pass screenshots of complex price charts or investor presentation slides to the AI, enabling it to "see" technical patterns or visual data that isn't present in the text.
+3. **Multimodal Capabilities**: Gemini 2.5 Flash Lite can ingest images and charts.24 This allows Prometheus to pass screenshots of complex price charts or investor presentation slides to the AI, enabling it to "see" technical patterns or visual data that isn't present in the text.
 
 ### **3.2 The "Death of RAG" in Financial Analysis**
 
@@ -151,11 +151,11 @@ JSON
   }  
 }
 
-This guarantees that the dashboard never breaks due to a hallucinated formatting error.
+This guarantees that the dashboard never breaks due to a hallucinated formatting error. For Prometheus, we have extended this to include a `sentiment_score` (0-100) and `top_headlines` mapping to drive the dynamic Market Pulse engine.
 
 ### **3.5 Context Caching for Cost Optimization**
 
-While input tokens are cheap, re-sending the same 10-K (100k tokens) for every user request is inefficient. Gemini 3 Flash supports **Context Caching**.13
+While input tokens are cheap, re-sending the same 10-K (100k tokens) for every user request is inefficient. Gemini 2.5 Flash Lite supports **Context Caching**.13
 
 * **Mechanism**: The system uploads the 10-K text to Gemini's cache once. A cache\_id is returned.  
 * **Usage**: Subsequent requests for that ticker reference the cache\_id.  
@@ -217,7 +217,7 @@ A critical architectural challenge in serverless environments like Vercel is the
 3. **Inngest Worker**:  
    * **Step 1 (Parallel Fetch)**: Spawns parallel jobs to fetch FMP data, scrape SEC, and pull news.  
    * **Step 2 (Wait)**: Waits for all data to arrive.  
-   * **Step 3 (AI)**: Sends consolidated data to Gemini 3 Flash.  
+   * **Step 3 (AI)**: Sends consolidated data to Gemini 2.5 Flash Lite.  
    * **Step 4 (Persist)**: Saves the result to Supabase ai\_insights table.  
 4. **Realtime Update**: Supabase detects the INSERT and pushes the new data to the client via WebSocket.
 
@@ -321,7 +321,7 @@ To protect the system from abuse and stay within API vendor limits:
 
 ### **7.1 The Commoditization of Analysis**
 
-Prometheus represents a shift in the value chain of financial research. Historically, the value lay in *access* to data. Today, with data becoming a commodity (cheap APIs) and intelligence becoming accessible (Gemini 3 Flash), the value shifts to **Synthesis** and **User Experience**. Prometheus captures this value by acting as the synthesis layer, converting raw data streams into actionable narratives.
+Prometheus represents a shift in the value chain of financial research. Historically, the value lay in *access* to data. Today, with data becoming a commodity (cheap APIs) and intelligence becoming accessible (Gemini 2.5 Flash Lite), the value shifts to **Synthesis** and **User Experience**. Prometheus captures this value by acting as the synthesis layer, converting raw data streams into actionable narratives.
 
 ### **7.2 Scalability and Roadmap**
 
@@ -331,7 +331,7 @@ The architecture is designed for scale.
 * **Phase 2 (Scale)**: As the dataset grows, the market\_data table can be migrated to a dedicated **TimescaleDB** instance or **ClickHouse** cluster for sub-millisecond analytical queries on billions of rows.29  
 * **Agentic Future**: The next evolution involves "Agentic" workflows where the user doesn't just ask for a report but assigns tasks: "Monitor AAPL and alert me if the P/E ratio drops below 25 AND sentiment turns positive." The current Inngest infrastructure is perfectly positioned to support these long-running, stateful agent loops.
 
-By fusing the transparency of Glassmorphism with the depth of Gemini 3 Flash, Prometheus delivers a tool that is not only powerful but intuitive—a true "Heads-Up Display" for the modern market participant.
+By fusing the transparency of Glassmorphism with the depth of Gemini 2.5 Flash Lite, Prometheus delivers a tool that is not only powerful but intuitive—a true "Heads-Up Display" for the modern market participant.
 
 # ---
 
@@ -474,7 +474,7 @@ export const analyzeTicker \= inngest.createFunction(
     };
 
     // Step 3: AI Synthesis  
-    // Sending to Gemini 3 Flash  
+    // Sending to Gemini 2.5 Flash Lite  
     const insights \= await step.run("generate-ai-insight", async () \=\> {  
       return await generateGeminiInsight(context);  
     });
@@ -515,7 +515,7 @@ Hypothetical monthly cost for 1,000 active users running 10 analyses/day.
 * **Vercel Pro**: $20/seat \+ Bandwidth. Estimated $100/mo.  
 * **Supabase Pro**: $25/mo \+ Usage. Estimated $50/mo.  
 * **Inngest**: Free Tier (initially), then usage-based. Estimated $0.  
-* **Gemini 3 Flash**:  
+* **Gemini 2.5 Flash Lite**:  
   * 10 analyses \* 1,000 users \* 30 days \= 300,000 requests.  
   * Avg input tokens (cached context): 5,000 (queries \+ news) \* 300k \= 1.5 Billion tokens.  
   * Avg input tokens (fresh context 10%): 100,000 \* 30,000 \= 3 Billion tokens.  
