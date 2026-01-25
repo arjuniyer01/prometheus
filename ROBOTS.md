@@ -21,6 +21,7 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 7. **Validation**: Maintain the integration testing suite in `src/__tests__/`. Run `npm test` before major builds to ensure API keys and endpoints (especially "stable" vs "v3") are functional.
 8. **Build Safety**: Provide fallbacks for environment variables in SDK initialization files (e.g., `src/lib/supabase.ts`) to prevent build-time crashes during static analysis on Vercel.
 9. **Dynamic Routing**: Mark all background API routes as `export const dynamic = 'force-dynamic'` to prevent Next.js from attempting to statically optimize paths that rely on runtime secrets.
+10. **Inngest Production Keys**: Ensure `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are set in Vercel. These are required for event triggers and secure communication with the Inngest Cloud.
 
 ### Completed Tasks
 - [x] Institutional Monochrome UI Overhaul (Silver/Slate/Black).
