@@ -1,6 +1,6 @@
 import { inngest } from "./client";
 import { supabase } from "@/lib/supabase";
-import { getKeyMetrics, getFinancialRatios, getCompanyProfile, getSECSubmissions, getNews } from "@/lib/scrapers";
+import { getKeyMetrics, getFinancialRatios, getCompanyProfile, getSECSubmissions, getNews, getHistoricalPrices } from "@/lib/scrapers";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
 export const analyzeTicker = inngest.createFunction(
@@ -10,18 +10,25 @@ export const analyzeTicker = inngest.createFunction(
         const { ticker } = event.data;
         console.log(`Starting analysis for ticker: ${ticker}`);
 
+        await step.run("clear-old-data", async () => {
+            console.log(`Clearing old analysis data for ${ticker}...`);
+            const { error } = await supabase.from('ai_insights').delete().eq('symbol', ticker);
+            if (error) throw error;
+        });
+
         const data = await step.run("fetch-financial-data", async () => {
             console.log(`Fetching FMP data for ${ticker}...`);
-            const [profile, metrics, ratios] = await Promise.all([
+            const [profile, metrics, ratios, historicalPrices] = await Promise.all([
                 getCompanyProfile(ticker),
                 getKeyMetrics(ticker),
                 getFinancialRatios(ticker),
+                getHistoricalPrices(ticker),
             ]);
 
             if (!profile) throw new Error(`Could not find profile for ticker ${ticker}`);
 
-            return { profile, metrics, ratios };
-        });
+            return { profile, metrics, ratios, historicalPrices };
+        }) as any;
 
         const secData = await step.run("fetch-sec-data", async () => {
             console.log(`Fetching SEC data for ${ticker} (CIK: ${data.profile.cik})...`);
@@ -41,26 +48,42 @@ export const analyzeTicker = inngest.createFunction(
 
             const prompt = `
         Analyze the following financial, regulatory, and news data for ${ticker} and act as a "Technical Copilot" for a retail investor.
-        Identify if each key metric is positive or negative based on sector averages and historical context.
+        
+        CRITICAL INSTRUCTIONS:
+        1. SEC SYNTHESIS: You MUST synthesize the last 5 filings provided. Do not just look at the most recent one. Look for patterns, recurring risks, or changes in reporting.
+        2. MARKET PULSE: Provide a highly specific analysis of the news headlines for ${ticker}. Avoid general market commentary; focus on what these specific headlines mean for ${ticker}'s valuation and sentiment.
+        3. BULL/BEAR: Ensure these are derived from a combination of the SEC filings and the news, not just the financial ratios.
         
         DATA:
         Profile: ${JSON.stringify(data.profile)}
         Key Metrics: ${JSON.stringify(data.metrics)}
         Ratios: ${JSON.stringify(data.ratios)}
         SEC Filings: ${hasSEC ? JSON.stringify({
-                last_filing: sec.recent.form[0],
-                last_date: sec.recent.filingDate[0],
-                recent_forms: sec.recent.form.slice(0, 5)
+                recent_forms: sec.recent.form.slice(0, 8),
+                recent_dates: sec.recent.filingDate.slice(0, 8),
+                recent_descriptions: sec.recent.primaryDocDescription.slice(0, 8)
             }) : "No SEC data available"}
-        News: ${JSON.stringify((newsData || []).slice(0, 5).map((n: any) => ({ headline: n.headline, summary: n.summary })))}
+        News Headlines: ${JSON.stringify((newsData || []).slice(0, 10).map((n: any) => ({ headline: n.headline, source: n.source })))}
         
         Output as JSON with:
         - executive_summary: A 2-3 sentence overview of the company's current health.
         - layman_analogy: A creative analogy for their business model.
-        - sec_analysis: A short 1-sentence assessment of the latest regulatory activity (e.g. "Recent 8-K indicates strong organic growth" or "High frequency of 4s suggest insider selling").
-        - sentiment_summary: A 2-sentence synthesis of general news sentiment and market perception.
+        - sec_analysis: A 2-sentence synthesis of the last several regulatory filings (e.g. comparing the recent 8-Ks vs the last 10-Q).
+        - sentiment_summary: A 2-sentence synthesis of SPECIFIC market headlines for ${ticker} and how they are impacting the "vibe" around the stock.
         - sentiment_score: A number from 0 to 100 representing overall market bullishness (0 being extreme fear/bearish, 100 being extreme greed/bullish).
-        - metrics: array of 8-10 key financial metrics (e.g., ROE, Debt/Equity, P/E, Quick Ratio, etc.)
+        - score_breakdown: Object containing component scores (0-100): { financial_score, sec_score, sentiment_score }.
+        - financial_subscores: Object with 0-100 scores: { profitability, growth, solvency }.
+        - financial_formula: The exact formula used strings "Score = (0.4 * Profitability) + (0.4 * Growth) + (0.2 * Solvency)".
+        - financial_score_drivers: Array of top 5 metrics driving the financial score. { label: string, impact: "positive" | "negative", weight: "high" | "medium" | "low" }.
+        - prometheus_score: Calculate EXACTLY as: (0.4 * financial_score) + (0.3 * sec_score) + (0.3 * sentiment_score). Round to nearest integer.
+        - score_criteria: A 1-sentence explanation of the breakdown (e.g. "High financial health (85) offsets moderate SEC risk (60)").
+        - metrics: array of 15-20 key financial metrics covering ALL major categories:
+             1. Valuation (P/E, PEG, Price/Book, Price/Sales, EV/EBITDA)
+             2. Profitability (Gross Margin, Operating Margin, Net Margin, ROE, ROA)
+             3. Financial Strength (Current Ratio, Quick Ratio, Debt/Equity, Interest Coverage)
+             4. Efficiency (Asset Turnover, Inventory Turnover)
+             5. Growth (Revenue Growth, EPS Growth)
+          Ensure you pick the most relevant ones.
           { 
             label: string, 
             value: string, 
@@ -89,6 +112,17 @@ export const analyzeTicker = inngest.createFunction(
 
             if (tickerError) throw tickerError;
 
+            // Persist Historical Prices
+            if (data.historicalPrices && data.historicalPrices.length > 0) {
+                const priceRecords = data.historicalPrices.map((p: any) => ({
+                    symbol: ticker,
+                    timestamp: new Date(p.date).toISOString(),
+                    open: p.open, high: p.high, low: p.low, close: p.close, volume: p.volume
+                }));
+                const { error: priceError } = await supabase.from('market_data').upsert(priceRecords, { onConflict: 'symbol,timestamp' });
+                if (priceError) console.error("Error persisting prices:", priceError);
+            }
+
             // Insert AI Insights
             const { error: insightError } = await supabase.from('ai_insights').insert({
                 symbol: ticker,
@@ -105,6 +139,12 @@ export const analyzeTicker = inngest.createFunction(
                     sec_analysis: aiAnalysis.sec_analysis,
                     sentiment_summary: aiAnalysis.sentiment_summary,
                     sentiment_score: aiAnalysis.sentiment_score || 50,
+                    prometheus_score: aiAnalysis.prometheus_score || 0,
+                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0 },
+                    financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
+                    financial_formula: aiAnalysis.financial_formula || "Aggregated from weighted metrics",
+                    financial_score_drivers: aiAnalysis.financial_score_drivers || [],
+                    score_criteria: aiAnalysis.score_criteria || "Score pending analysis depth.",
                     last_sec_filing: (secData as any)?.recent?.form?.[0] || 'N/A',
                     top_headlines: (newsData || []).slice(0, 3).map((n: any) => ({
                         headline: n.headline,

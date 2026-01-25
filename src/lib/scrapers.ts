@@ -83,10 +83,15 @@ export async function getSECSubmissions(cik: string) {
  * Fetch historical daily prices for the last 30 days.
  */
 export async function getHistoricalPrices(symbol: string) {
-    // FMP Stable format for historical data: /stable/historical-price-eod/full?symbol={AAPL}
-    const data = await fetchFMP(`historical-price-eod/full`, {
-        symbol,
-        limit: '30'
-    });
-    return data || []; // This endpoint often returns an array directly
+    try {
+        // Try the standard historical endpoint
+        const data = await fetchFMP(`historical-price-full/${symbol}`, {
+            serietype: 'line',
+            timeseries: '30'
+        });
+        return data.historical || [];
+    } catch (error) {
+        console.warn(`Historical prices failed for ${symbol}`, error);
+        return [];
+    }
 }

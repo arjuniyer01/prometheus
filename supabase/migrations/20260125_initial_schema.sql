@@ -90,3 +90,7 @@ CREATE POLICY "Public Read Financials" ON public.financials FOR SELECT USING (tr
 ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Public Read AI Insights" ON public.ai_insights FOR SELECT USING (true);
 CREATE POLICY "Public Insert AI Insights" ON public.ai_insights FOR INSERT WITH CHECK (true);
+
+-- 5. ENABLE REALTIME
+-- Explicitly add tables to the publication to allow listening for changes
+alter publication supabase_realtime add table ai_insights, tickers, market_data;

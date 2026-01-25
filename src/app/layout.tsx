@@ -49,9 +49,7 @@ export default function RootLayout({
               <span className="text-xl font-bold font-outfit tracking-tight">PROMETHEUS</span>
             </div>
 
-            <div className="flex items-center gap-4">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
-            </div>
+
           </div>
         </header>
 

@@ -46,21 +46,7 @@ export const MetricCopilot = ({
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold uppercase tracking-widest text-slate-500">{label}</span>
-                        {technicalDefinition && (
-                            <TooltipProvider>
-                                <Tooltip>
-                                    <TooltipTrigger>
-                                        <Info className="w-3 h-3 text-slate-600 hover:text-indigo-400 transition-colors" />
-                                    </TooltipTrigger>
-                                    <TooltipContent className="glass-morphism border-indigo-500/30 p-4 max-w-xs">
-                                        <p className="text-xs leading-relaxed text-slate-300">
-                                            <span className="font-bold text-indigo-400 block mb-1">Technical Definition:</span>
-                                            {technicalDefinition}
-                                        </p>
-                                    </TooltipContent>
-                                </Tooltip>
-                            </TooltipProvider>
-                        )}
+
                     </div>
                     <div className="text-2xl font-bold font-outfit">{value}</div>
                 </div>

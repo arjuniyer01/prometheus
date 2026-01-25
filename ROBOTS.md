@@ -34,6 +34,10 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 - [x] Edge-to-edge fluid layout optimization (Ultrawide & Vertical Tab support).
 - [x] API Validation suite (`npm test`) reaching 100% green status.
 - [x] Sentiment-aware UI elements (dynamic progress bars and labels).
+- [x] UI Cleanup: Removed redundant stock avatars, blinking pulse, and info icons.
+- [x] Historical Price Caching: Implemented Supabase persistence for price data to reduce API load.
+- [x] Enhanced Synthesis: Prompt engineering to include multiple SEC filings and stock-specific market pulse.
+- [x] UX Polish: More prominent "Regenerate" button with better labeling.
 
 ### Pending Tasks
 - [ ] Implement Realtime websocket subscription for minute-by-minute price updates.
