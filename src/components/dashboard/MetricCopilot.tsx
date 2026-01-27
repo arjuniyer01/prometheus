@@ -26,6 +26,8 @@ export const MetricCopilot = ({
     technicalDefinition,
     trend
 }: MetricCopilotProps) => {
+    const safeStatus = (['positive', 'negative', 'neutral'].includes(status) ? status : 'neutral') as 'positive' | 'negative' | 'neutral';
+
     const statusColors = {
         positive: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
         negative: "text-red-400 bg-red-500/10 border-red-500/20",
@@ -38,7 +40,7 @@ export const MetricCopilot = ({
         neutral: HelpCircle,
     };
 
-    const StatusIcon = Icons[status];
+    const StatusIcon = Icons[safeStatus];
 
     return (
         <GlassCard className="p-4 flex flex-col gap-3 group/metric">
@@ -53,10 +55,10 @@ export const MetricCopilot = ({
 
                 <div className={cn(
                     "px-2 py-1 rounded-lg border flex items-center gap-1.5 transition-all",
-                    statusColors[status]
+                    statusColors[safeStatus]
                 )}>
                     <StatusIcon className="w-3.5 h-3.5" />
-                    <span className="text-[10px] font-bold uppercase">{status}</span>
+                    <span className="text-[10px] font-bold uppercase">{safeStatus}</span>
                 </div>
             </div>
 
@@ -76,9 +78,9 @@ export const MetricCopilot = ({
             {/* Visual background glow reflecting status */}
             <div className={cn(
                 "absolute -bottom-4 -right-4 w-12 h-12 blur-2xl rounded-full opacity-20 transition-opacity group-hover/metric:opacity-40",
-                status === 'positive' && "bg-emerald-500",
-                status === 'negative' && "bg-red-500",
-                status === 'neutral' && "bg-slate-500"
+                safeStatus === 'positive' && "bg-emerald-500",
+                safeStatus === 'negative' && "bg-red-500",
+                safeStatus === 'neutral' && "bg-slate-500"
             )} />
         </GlassCard>
     );

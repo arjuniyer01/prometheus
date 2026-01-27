@@ -42,6 +42,16 @@ export async function getCompanyProfile(symbol: string) {
     }
 }
 
+export async function getQuote(symbol: string) {
+    try {
+        const data = await fetchFMP(`quote`, { symbol });
+        return data?.[0] || null;
+    } catch (error) {
+        console.error(`Quote fetch failed for ${symbol}:`, error);
+        return null;
+    }
+}
+
 export async function getKeyMetrics(symbol: string) {
     try {
         const data = await fetchFMP(`key-metrics`, { symbol, limit: '1' });
@@ -199,3 +209,22 @@ export async function getHistoricalPrices(symbol: string) {
     console.warn(`[FMP] Exhausted FMP options for ${symbol}, falling back to Finnhub`);
     return getFinnhubHistoricalPrices(symbol);
 }
+
+export async function getIncomeStatement(symbol: string, period: 'annual' | 'quarter' = 'annual', limit: number = 5) {
+    try {
+        return await fetchFMP(`income-statement`, { symbol, period, limit: limit.toString() });
+    } catch (error) {
+        console.error(`Income statement fetch failed for ${symbol}:`, error);
+        return [];
+    }
+}
+
+export async function getBalanceSheet(symbol: string, period: 'annual' | 'quarter' = 'annual', limit: number = 5) {
+    try {
+        return await fetchFMP(`balance-sheet-statement`, { symbol, period, limit: limit.toString() });
+    } catch (error) {
+        console.error(`Balance sheet fetch failed for ${symbol}:`, error);
+        return [];
+    }
+}
+
