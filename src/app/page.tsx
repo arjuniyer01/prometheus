@@ -429,7 +429,9 @@ export default function Home() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="h-full w-full flex items-center justify-center border-t border-white/5">
-                    <p className="text-[10px] text-slate-600 font-mono italic">Initializing Charting Engine...</p>
+                    <p className="text-[10px] text-slate-600 font-mono italic">
+                      {loadingPrices ? "Initializing Charting Engine..." : "Historical Charting Unavailable"}
+                    </p>
                   </div>
                 )}
               </div>
@@ -478,7 +480,7 @@ export default function Home() {
                   </div>
 
                   <a
-                    href={`https://www.sec.gov/cgi-bin/browse-edgar?CIK=${selectedSymbol}&action=getcompany`}
+                    href={`https://www.sec.gov/cgi-bin/browse-edgar?CIK=${insight.metadata?.cik || selectedSymbol}&action=getcompany`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="block w-full text-center py-2.5 rounded-xl bg-amber-500/10 hover:bg-white/10 text-amber-400 text-[10px] font-bold uppercase tracking-widest transition-all"

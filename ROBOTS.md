@@ -14,7 +14,7 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 ### Development Rules & Lessons Learned
 1. **Design System**: Use the Institutional Monochrome palette (Silver/Slate/Black). Sectional color accents are reserved for data categorization: Amber for SEC Regulatory data, Sky Blue for Market Pulse/Sentiment, and Emerald/Red for bull/bear cases.
 2. **Layout**: Prioritize a fluid edge-to-edge layout (max-width: 1920px) to support modern browser configurations like vertical tabs.
-3. **API Redundancy**: Always implement fallbacks for flaky or restricted endpoints. (e.g., `getNews` defaults to Finnhub but falls back to FMP V3).
+3. **API Redundancy**: Always implement fallbacks for flaky or restricted endpoints. (Priority: FMP Primary, Finnhub Fallback). `getNews`, historical prices, and fundamental metrics default to FMP, falling back to Finnhub ONLY if data is missing or restricted.
 4. **Branding**: Use high-fidelity SVG assets (`engineer.svg`) for branding to ensure sharp rendering as both logos and favicons. Declare SVG types in metadata for cross-browser favicon support.
 5. **Realtime UX**: Use Supabase Realtime for instant UI updates. Display "Synthesizing" states clearly to manage user expectations during AI generation.
 6. **Rate Limiting**: Adhere to SEC EDGAR limits (max 10 req/s). Use the provided `headers` with a valid User-Agent.
@@ -22,6 +22,7 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 8. **Build Safety**: Provide fallbacks for environment variables in SDK initialization files (e.g., `src/lib/supabase.ts`) to prevent build-time crashes during static analysis on Vercel.
 9. **Dynamic Routing**: Mark all background API routes as `export const dynamic = 'force-dynamic'` to prevent Next.js from attempting to statically optimize paths that rely on runtime secrets.
 10. **Inngest Production Keys**: Ensure `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are set in Vercel. These are required for event triggers and secure communication with the Inngest Cloud.
+11. **FMP Stable API**: Prioritize the modern `/stable/` endpoints for paid users. The correct structure is `https://financialmodelingprep.com/stable/{endpoint}?symbol={symbol}&apikey={API_KEY}`. This format applies to `quote`, `profile`, `ratios`, `key-metrics`, and `historical-price-eod/full`.
 
 ### Completed Tasks
 - [x] Institutional Monochrome UI Overhaul (Silver/Slate/Black).

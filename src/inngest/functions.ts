@@ -1,6 +1,6 @@
 import { inngest } from "./client";
 import { supabase } from "@/lib/supabase";
-import { getKeyMetrics, getFinancialRatios, getCompanyProfile, getSECSubmissions, getNews, getHistoricalPrices } from "@/lib/scrapers";
+import { getKeyMetrics, getFinancialRatios, getCompanyProfile, getSECSubmissions, getNews, getHistoricalPrices, getFinnhubFinancials } from "@/lib/scrapers";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
 export const analyzeTicker = inngest.createFunction(
@@ -27,7 +27,14 @@ export const analyzeTicker = inngest.createFunction(
 
             if (!profile) throw new Error(`Could not find profile for ticker ${ticker}`);
 
-            return { profile, metrics, ratios, historicalPrices };
+            // Fallback to Finnhub if key data is missing
+            let finnhubMetrics = null;
+            if (!metrics || !ratios) {
+                console.log(`FMP metrics missing for ${ticker}, fetching Finnhub fallback...`);
+                finnhubMetrics = await getFinnhubFinancials(ticker);
+            }
+
+            return { profile, metrics, ratios, historicalPrices, finnhubMetrics };
         }) as any;
 
         const secData = await step.run("fetch-sec-data", async () => {
@@ -56,8 +63,9 @@ export const analyzeTicker = inngest.createFunction(
         
         DATA:
         Profile: ${JSON.stringify(data.profile)}
-        Key Metrics: ${JSON.stringify(data.metrics)}
-        Ratios: ${JSON.stringify(data.ratios)}
+        Key Metrics (FMP): ${JSON.stringify(data.metrics)}
+        Ratios (FMP): ${JSON.stringify(data.ratios)}
+        Basic Financials (Finnhub Fallback): ${JSON.stringify(data.finnhubMetrics)}
         SEC Filings: ${hasSEC ? JSON.stringify({
                 recent_forms: sec.recent.form.slice(0, 8),
                 recent_dates: sec.recent.filingDate.slice(0, 8),
@@ -132,6 +140,7 @@ export const analyzeTicker = inngest.createFunction(
                 metrics: aiAnalysis.metrics,
                 model_version: 'gemini-2.5-flash-lite',
                 metadata: {
+                    cik: data.profile.cik,
                     price: data.profile.price,
                     changes: data.profile.changes,
                     changesPercentage: data.profile.changesPercentage,

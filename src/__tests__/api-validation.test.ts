@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GoogleGenAI } from "@google/genai";
+import { getHistoricalPrices } from "../lib/scrapers";
 
 describe('External API Validation', () => {
     const fmpKey = process.env.FMP_API_KEY;
@@ -76,13 +77,12 @@ describe('External API Validation', () => {
 
     it('FMP Historical Price API should return time-series data', async () => {
         expect(fmpKey, 'FMP_API_KEY is missing').toBeDefined();
-        // Validation of the specific stable endpoint we are targeting
-        const res = await fetch(`https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=AAPL&limit=5&apikey=${fmpKey}`);
-
-        expect(res.status).toBe(200);
-        const data = await res.json();
-        // This endpoint returns an array of price objects
+        // Use the function directly to validate its logic
+        const data = await getHistoricalPrices('AAPL');
+        console.log('Test Data for AAPL:', JSON.stringify(data.slice(0, 1)));
         expect(Array.isArray(data)).toBe(true);
+        expect(data.length).toBeGreaterThan(0);
         expect(data[0].close).toBeDefined();
+        expect(data[0].date).toBeDefined();
     });
 });
