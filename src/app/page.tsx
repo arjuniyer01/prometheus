@@ -20,15 +20,6 @@ import {
 import { cn } from "@/lib/utils";
 
 import { useToast } from "@/components/ui/use-toast";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-
 import { createPortal } from "react-dom";
 
 import {
@@ -48,9 +39,6 @@ export default function Home() {
   const [finView, setFinView] = useState<'annual' | 'quarterly'>('annual');
   const [loading, setLoading] = useState(true);
   const [loadingPrices, setLoadingPrices] = useState(false);
-  const [addingTicker, setAddingTicker] = useState(false);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [newTicker, setNewTicker] = useState("");
   const { toast } = useToast();
 
   const fetchTickers = useCallback(async () => {
@@ -61,7 +49,10 @@ export default function Home() {
 
     if (data && data.length > 0) {
       setTickers(data);
-      if (!selectedSymbol) setSelectedSymbol(data[0].symbol);
+      if (!selectedSymbol) {
+        const hasAAPL = data.find(t => t.symbol === "AAPL");
+        setSelectedSymbol(hasAAPL ? "AAPL" : data[0].symbol);
+      }
     }
     setLoading(false);
   }, [selectedSymbol]);
@@ -172,66 +163,8 @@ export default function Home() {
     return () => { supabase.removeChannel(channel); };
   }, [selectedSymbol, fetchTickerDetails, fetchPrices, toast]);
 
-  const handleAddTicker = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newTicker) return;
-
-    setAddingTicker(true);
-    const upperTicker = newTicker.toUpperCase();
-
-    // Optimistic UI Update: Show the ticker immediately
-    setTickers(prev => {
-      if (prev.find(t => t.symbol === upperTicker)) return prev;
-      return [...prev, { symbol: upperTicker, company_name: "Scanning..." }].sort((a, b) => a.symbol.localeCompare(b.symbol));
-    });
-    setSelectedSymbol(upperTicker);
-    setInsight(null);
-    setPrices([]);
-    setIsDialogOpen(false);
-    setNewTicker("");
-
-    toast({
-      title: "Analysis Started",
-      description: `Engines ignited for ${upperTicker}. Waiting for data...`,
-    });
-
-    try {
-      await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: upperTicker })
-      });
-    } catch (err) {
-      console.error(err);
-      toast({
-        title: "Analysis Failed",
-        description: "Could not start analysis for " + upperTicker,
-        variant: "destructive"
-      });
-      // Optional: Revert optimistic update here if critical
-    } finally {
-      setAddingTicker(false);
-    }
-  };
-
-  const handleRegenerate = async () => {
-    if (!selectedSymbol) return;
-    setInsight(null);
-    try {
-      await fetch('/api/analyze', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ticker: selectedSymbol })
-      });
-      fetchPrices(selectedSymbol);
-      toast({
-        title: "Regeneration Started",
-        description: `Re-synthesizing for ${selectedSymbol}...`,
-      });
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   if (loading && tickers.length === 0) {
     return (
@@ -247,50 +180,68 @@ export default function Home() {
   return (
     <div className="space-y-6">
       {/* Navigation */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-2 no-scrollbar border-b border-white/5">
-        {tickers.map((t) => (
-          <button
-            key={t.symbol}
-            onClick={() => setSelectedSymbol(t.symbol)}
-            className={cn(
-              "px-6 py-2 rounded-xl font-bold text-sm transition-all whitespace-nowrap border",
-              selectedSymbol === t.symbol
-                ? "bg-white text-black border-white shadow-[0_0_20px_rgba(255,255,255,0.2)]"
-                : "bg-white/5 text-slate-500 border-white/5 hover:bg-white/10 hover:text-slate-300"
-            )}
-          >
-            {t.symbol}
-          </button>
-        ))}
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <button className="p-2 rounded-xl bg-white/5 border border-dashed border-white/20 text-slate-500 hover:text-white hover:border-white/40 transition-all flex items-center justify-center min-w-[40px]">
-              <Plus className="w-5 h-5" />
-            </button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-md bg-slate-950 border-white/10">
-            <DialogHeader>
-              <DialogTitle className="text-white">Add Ticker</DialogTitle>
-              <DialogDescription className="text-slate-400">Initialize a deep synthesis for any stock or commodity.</DialogDescription>
-            </DialogHeader>
-            <form onSubmit={handleAddTicker} className="flex items-center space-x-2 py-4">
-              <input
-                placeholder="e.g. BTC, NVDA"
-                className="h-12 flex-1 bg-white/5 border border-white/10 rounded-xl px-4 text-white focus:outline-none focus:ring-1 focus:ring-white/50 uppercase"
-                value={newTicker}
-                onChange={(e) => setNewTicker(e.target.value)}
-                autoFocus
-              />
-              <button
-                type="submit"
-                disabled={addingTicker || !newTicker}
-                className="h-12 px-6 rounded-xl bg-white text-black font-bold transition-all disabled:opacity-50"
-              >
-                {addingTicker ? <Loader2 className="w-4 h-4 animate-spin" /> : "Analyze"}
-              </button>
-            </form>
-          </DialogContent>
-        </Dialog>
+      <div className="relative z-50">
+        <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3 focus-within:border-white/30 transition-all">
+          <Search className="w-5 h-5 text-slate-500" />
+          <input
+            type="text"
+            placeholder="Search Intelligence Universe..."
+            className="bg-transparent border-none outline-none text-white w-full text-sm font-medium uppercase tracking-wider"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setIsSearchOpen(true);
+            }}
+            onFocus={() => setIsSearchOpen(true)}
+          />
+          {selectedSymbol && (
+            <div className="flex items-center gap-2 bg-white text-black px-3 py-1 rounded-lg text-[10px] font-bold">
+              {selectedSymbol}
+            </div>
+          )}
+        </div>
+
+        {isSearchOpen && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setIsSearchOpen(false)} />
+            <GlassCard className="absolute top-full left-0 right-0 mt-2 p-2 border-white/10 bg-slate-950/90 backdrop-blur-3xl z-50 max-h-[300px] overflow-y-auto custom-scrollbar" hoverEffect={false}>
+              <div className="flex flex-col gap-1">
+                {tickers
+                  .filter(t => t.symbol.toLowerCase().includes(searchTerm.toLowerCase()) || t.company_name?.toLowerCase().includes(searchTerm.toLowerCase()))
+                  .map(t => (
+                    <button
+                      key={t.symbol}
+                      onClick={() => {
+                        setSelectedSymbol(t.symbol);
+                        setIsSearchOpen(false);
+                        setSearchTerm("");
+                      }}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-xl transition-all text-left group",
+                        selectedSymbol === t.symbol ? "bg-white/10" : "hover:bg-white/5"
+                      )}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 bg-white/5 rounded-lg flex items-center justify-center border border-white/5 font-mono font-bold text-white text-[10px]">
+                          {t.symbol[0]}
+                        </div>
+                        <div>
+                          <div className="text-sm font-bold text-white font-mono">{t.symbol}</div>
+                          <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider truncate max-w-[200px]">{t.company_name}</div>
+                        </div>
+                      </div>
+                      {selectedSymbol === t.symbol && <div className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_8px_white]" />}
+                    </button>
+                  ))}
+                {tickers.filter(t => t.symbol.toLowerCase().includes(searchTerm.toLowerCase()) || t.company_name?.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 && (
+                  <div className="p-8 text-center text-slate-600 italic text-xs">
+                    No matching assets found.
+                  </div>
+                )}
+              </div>
+            </GlassCard>
+          </>
+        )}
       </div>
 
       {selectedSymbol ? (
@@ -306,16 +257,9 @@ export default function Home() {
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="flex flex-col items-end">
-                    <button
-                      onClick={handleRegenerate}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/5"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span className="text-[10px] font-bold uppercase tracking-wider">Regenerate</span>
-                    </button>
                     {insight?.created_at && (
-                      <span className="text-[9px] text-slate-600 font-mono mt-1 pr-1">
-                        {new Date(insight.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      <span className="text-[9px] text-slate-600 font-mono pr-1">
+                        SYNTHESIZED: {new Date(insight.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
                   </div>

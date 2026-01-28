@@ -38,7 +38,9 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 - [x] UI Cleanup: Removed redundant stock avatars, blinking pulse, and info icons.
 - [x] Historical Price Caching: Implemented Supabase persistence for price data to reduce API load.
 - [x] Enhanced Synthesis: Prompt engineering to include multiple SEC filings and stock-specific market pulse.
-- [x] UX Polish: More prominent "Regenerate" button with better labeling.
+- [x] UX Polish: Search-based navigation replaced ticker tab bars for improved scalability.
+- [x] Admin terminal (/admin) for gated stock initialization and regeneration.
+- [x] Secured "Analysis" and "Regenerate" actions by moving them to an authenticated admin route.
 
 ### Pending Tasks
 - [ ] Implement Realtime websocket subscription for minute-by-minute price updates.
