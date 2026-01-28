@@ -24,9 +24,19 @@ export const analyzeTicker = inngest.createFunction(
         await step.run("clear-old-data", async () => {
             console.log(`Clearing old analysis data for ${ticker}...`);
             // Initialize sync status
-            await supabase.from('tickers').update({ sync_status: 'FETCHING', sync_percent: 5 }).eq('symbol', ticker);
-            const { error } = await supabase.from('ai_insights').delete().eq('symbol', ticker).eq('market', 'US');
-            if (error) throw error;
+            await supabase.from('tickers').upsert({
+                symbol: ticker,
+                sync_status: 'FETCHING',
+                sync_percent: 5,
+                market: 'US'
+            }, { onConflict: 'symbol' });
+
+            // Delete old insights, financials, and price history to ensure fresh scan
+            await Promise.all([
+                supabase.from('ai_insights').delete().eq('symbol', ticker).eq('market', 'US'),
+                supabase.from('financials').delete().eq('symbol', ticker),
+                supabase.from('market_data').delete().eq('symbol', ticker)
+            ]);
         });
 
         const data = await step.run("fetch-financial-data", async () => {
@@ -180,7 +190,9 @@ export const analyzeTicker = inngest.createFunction(
                 industry: data.profile.industry,
                 market_cap: data.profile.mktCap,
                 exchange: data.profile.exchange,
-                market: 'US'
+                market: 'US',
+                sync_status: 'PERSISTING',
+                sync_percent: 85
             });
 
             if (tickerError) throw tickerError;
@@ -203,13 +215,25 @@ export const analyzeTicker = inngest.createFunction(
             ];
 
             if (statements.length > 0) {
-                const financialRecords = statements.map((s: any) => ({
-                    symbol: ticker,
-                    period: s.date,
-                    report_type: s.type,
-                    income_statement: s,
-                    balance_sheet: [...(data.annualBalance || [])].find(b => b.date === s.date) || {}
-                }));
+                const financialRecords = statements.map((s: any) => {
+                    const balanceSheet = s.type === '10-K'
+                        ? [...(data.annualBalance || [])].find(b => b.date === s.date) || {}
+                        : [...(data.quarterlyBalance || [])].find(b => b.date === s.date) || {};
+
+                    // Normalize balance sheet keys for UI consistency
+                    const normalizedBS = { ...balanceSheet };
+                    if (normalizedBS.totalLiabilities && !normalizedBS.totalTotalLiabilities) {
+                        normalizedBS.totalTotalLiabilities = normalizedBS.totalLiabilities;
+                    }
+
+                    return {
+                        symbol: ticker,
+                        period: s.date,
+                        report_type: s.type,
+                        income_statement: s,
+                        balance_sheet: normalizedBS
+                    };
+                });
 
                 const { error: finError } = await supabase.from('financials').upsert(financialRecords, { onConflict: 'symbol,period,report_type' });
                 if (finError) console.error("Error persisting financials:", finError);

@@ -183,7 +183,7 @@ export async function getHistoricalPricesIndia(symbol: string) {
         // Doc says /historical_data uses 'stock_name', 'period', 'filter'
         const data = await fetchIndianAPI('historical_data', {
             stock_name: symbol,
-            period: '1yr',
+            period: 'max',
             filter: 'price'
         });
         if (data && data.datasets && data.datasets[0] && data.datasets[0].values) {

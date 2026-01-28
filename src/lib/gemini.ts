@@ -8,25 +8,41 @@ const ai = new GoogleGenAI({
 export const gemini = ai.models;
 
 /**
- * Helper to generate structured JSON from Gemini 2.5 Flash Lite.
+ * Helper to generate structured JSON with fallback logic.
  */
 export async function generateStructuredAnalysis(prompt: string) {
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite",
-            contents: prompt,
-        });
+    const models = ["gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
+    let lastError = null;
 
-        const text = response.text || "";
-        if (!text) throw new Error("Gemini returned empty response");
+    for (const model of models) {
+        try {
+            console.log(`[GEMINI] Attempting analysis with model: ${model}`);
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: prompt,
+            });
 
-        // Strip markdown blocks if present
-        const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
-        const jsonString = jsonMatch ? jsonMatch[1] : text;
+            const text = response.text || "";
+            if (!text) throw new Error(`${model} returned empty response`);
 
-        return JSON.parse(jsonString);
-    } catch (error) {
-        console.error("Gemini 2.5 Analysis Error:", error);
-        throw error;
+            // Strip markdown blocks if present
+            const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
+            const jsonString = jsonMatch ? jsonMatch[1] : text;
+
+            return JSON.parse(jsonString);
+        } catch (error: any) {
+            lastError = error;
+            const isOverloaded = error?.status === 503 || error?.status === 429 || error?.message?.includes("overloaded") || error?.message?.includes("Too Many Requests");
+
+            if (isOverloaded) {
+                console.warn(`[GEMINI] Model ${model} is overloaded or rate-limited. Falling back...`);
+                continue; // Try next model
+            }
+
+            console.error(`[GEMINI] Non-recoverable error with ${model}:`, error);
+            throw error;
+        }
     }
+
+    throw lastError || new Error("All Gemini models failed");
 }

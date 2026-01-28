@@ -26,16 +26,29 @@ function pivotFinancials(data: any): any[] {
     // Map Indian labels to our standard keys
     const mapping: Record<string, string> = {
         'Sales': 'revenue',
+        'Revenue': 'revenue',
+        'Total Revenue': 'revenue',
+        'TotalRevenue': 'revenue',
         'Net Profit': 'netIncome',
+        'NetProfit': 'netIncome',
+        'Net Income': 'netIncome',
+        'NetIncome': 'netIncome',
+        'Profit After Tax': 'netIncome',
         'Total Assets': 'totalAssets',
+        'TotalAssets': 'totalAssets',
         'Total Liabilities': 'totalTotalLiabilities',
+        'TotalLiabilities': 'totalTotalLiabilities',
+        'Total Liab.': 'totalTotalLiabilities',
+        'TotalLiab': 'totalTotalLiabilities',
         'Equity Capital': 'commonStock',
+        'EquityCapital': 'commonStock',
         'Reserves': 'retainedEarnings'
     };
 
     const results = Array.from(periods).map(period => {
         const record: any = { period };
-        Object.entries(data).forEach(([label, metrics]: [string, any]) => {
+        Object.entries(data).forEach(([rawLabel, metrics]: [string, any]) => {
+            const label = rawLabel.trim();
             const key = mapping[label] || label;
             const val = metrics[period];
             if (val !== undefined) {
@@ -67,23 +80,40 @@ function transformRowFinancials(stockFinancialObj: any): any {
     const mapping: Record<string, string> = {
         'Revenue': 'revenue',
         'Total Revenue': 'revenue',
+        'TotalRevenue': 'revenue',
         'Sales': 'revenue',
         'Net Income': 'netIncome',
+        'NetIncome': 'netIncome',
         'Net Profit': 'netIncome',
+        'NetProfit': 'netIncome',
         'Profit After Tax': 'netIncome',
         'Total Assets': 'totalAssets',
+        'TotalAssets': 'totalAssets',
         'Total Liabilities': 'totalTotalLiabilities',
+        'TotalLiabilities': 'totalTotalLiabilities',
+        'Total Liab.': 'totalTotalLiabilities',
+        'TotalLiab': 'totalTotalLiabilities',
         'Total Current Assets': 'totalCurrentAssets',
+        'TotalCurrentAssets': 'totalCurrentAssets',
         'Total Current Liabilities': 'totalCurrentLiabilities',
+        'TotalCurrentLiabilities': 'totalCurrentLiabilities',
         'Total Equity': 'totalStockholdersEquity',
+        'TotalEquity': 'totalStockholdersEquity',
         'Equity Capital': 'commonStock',
+        'EquityCapital': 'commonStock',
         'Operating Income': 'operatingIncome',
+        'OperatingIncome': 'operatingIncome',
         'Operating Profit': 'operatingIncome',
+        'OperatingProfit': 'operatingIncome',
         'Gross Profit': 'grossProfit',
+        'GrossProfit': 'grossProfit',
         'Common Stock Total': 'commonStock',
+        'CommonStockTotal': 'commonStock',
         'Retained Earnings( Accumulated Deficit) ': 'retainedEarnings',
+        'RetainedEarnings': 'retainedEarnings',
         'Reserves': 'retainedEarnings',
         'Depreciation/ Amortization': 'depreciationAndAmortization',
+        'DepreciationAmortization': 'depreciationAndAmortization',
         'Interest Inc( Exp) Net- Non- Op Total': 'interestExpense'
     };
 
@@ -123,9 +153,19 @@ export const analyzeTickerIndia = inngest.createFunction(
         await step.run("clear-old-data", async () => {
             console.log(`Clearing old analysis data for ${ticker}...`);
             // Initialize sync status
-            await supabase.from('tickers').update({ sync_status: 'FETCHING', sync_percent: 5 }).eq('symbol', ticker);
-            const { error } = await supabase.from('ai_insights').delete().eq('symbol', ticker).eq('market', 'INDIA');
-            if (error) throw error;
+            await supabase.from('tickers').upsert({
+                symbol: ticker,
+                sync_status: 'FETCHING',
+                sync_percent: 5,
+                market: 'INDIA'
+            }, { onConflict: 'symbol' });
+
+            // Delete old insights, financials, and price history to ensure fresh scan
+            await Promise.all([
+                supabase.from('ai_insights').delete().eq('symbol', ticker).eq('market', 'INDIA'),
+                supabase.from('financials').delete().eq('symbol', ticker),
+                supabase.from('market_data').delete().eq('symbol', ticker)
+            ]);
         });
 
         const profile = await step.run("fetch-profile", async () => {
@@ -232,8 +272,9 @@ export const analyzeTickerIndia = inngest.createFunction(
                 industry: data.profile.industry,
                 market_cap: data.profile.mktCap,
                 exchange: data.profile.exchange,
-                is_active: true,
-                market: 'INDIA'
+                market: 'INDIA',
+                sync_status: 'PERSISTING',
+                sync_percent: 85
             });
 
             if (tickerError) throw tickerError;
@@ -260,8 +301,7 @@ export const analyzeTickerIndia = inngest.createFunction(
                         period: res.period,
                         report_type: '10-K',
                         income_statement: res,
-                        balance_sheet: pivotFinancials(data.financials.balanceSheet).find(b => b.period === res.period) || {},
-                        market: 'INDIA'
+                        balance_sheet: pivotFinancials(data.financials.balanceSheet).find(b => b.period === res.period) || {}
                     });
                 });
             }
@@ -273,8 +313,7 @@ export const analyzeTickerIndia = inngest.createFunction(
                         symbol: ticker,
                         period: res.period,
                         report_type: '10-Q',
-                        income_statement: res,
-                        market: 'INDIA'
+                        income_statement: res
                     });
                 });
             }
@@ -290,8 +329,7 @@ export const analyzeTickerIndia = inngest.createFunction(
                             period: transformed.period,
                             report_type: f.Type === 'Annual' ? '10-K' : '10-Q',
                             income_statement: transformed,
-                            balance_sheet: transformed, // In row format, they are often in the same map
-                            market: 'INDIA'
+                            balance_sheet: transformed // In row format, they are often in the same map
                         });
                     }
                 });

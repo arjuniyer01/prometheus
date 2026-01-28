@@ -50,7 +50,7 @@ export default function RootLayout({
             </div>
 
             <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/10">Unified Nexus</span>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/10">In development, information may be incomplete or incorrect</span>
             </div>
 
           </div>
@@ -64,7 +64,7 @@ export default function RootLayout({
         <footer className="border-t border-white/5 py-12 bg-slate-950/50">
           <div className="w-full px-4 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="text-sm text-slate-500">
-              © 2026 Prometheus Intelligence. Data provided by FMP & Finnhub.
+              © 2026 Prometheus Intelligence.
             </div>
             <div className="text-[10px] text-slate-600 max-w-md text-center md:text-right italic">
               AI-generated content. Not financial advice. Use as a research aid only.

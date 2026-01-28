@@ -7,6 +7,8 @@ import { Loader2, Plus, RotateCcw, ShieldCheck, LogOut, LayoutDashboard } from "
 import { useToast } from "@/components/ui/use-toast";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
+import { RegenerateConfirmDialog } from "@/components/admin/RegenerateConfirmDialog";
+import { formatDistanceToNow } from "date-fns";
 
 export default function AdminPage() {
     const [password, setPassword] = useState("");
@@ -77,21 +79,62 @@ export default function AdminPage() {
     useEffect(() => {
         if (isAuthorized) {
             const fetchTickers = async () => {
-                const { data } = await supabase.from('tickers').select('*').order('symbol');
-                if (data) setTickers(data);
+                // Fetch tickers and join with the latest AI insight to get synthesis time
+                const { data, error } = await supabase
+                    .from('tickers')
+                    .select('*, ai_insights(created_at)')
+                    .order('symbol');
+
+                if (data) {
+                    const normalized = data.map(t => {
+                        // Find the latest synthesis time from the insights array
+                        let newestInsight = t.created_at;
+                        if (t.ai_insights && t.ai_insights.length > 0) {
+                            const times = t.ai_insights.map((i: any) => new Date(i.created_at).getTime());
+                            newestInsight = new Date(Math.max(...times)).toISOString();
+                        }
+
+                        return {
+                            ...t,
+                            sync_percent: t.sync_percent || 0,
+                            last_synthesis: newestInsight
+                        };
+                    });
+                    setTickers(normalized);
+                }
+                if (error) console.error("Error fetching tickers:", error);
             };
             fetchTickers();
 
             const channel = supabase
                 .channel('admin-ticker-updates')
-                .on('postgres_changes', { event: '*', schema: 'public', table: 'tickers' }, () => {
-                    fetchTickers();
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'tickers' }, (payload: any) => {
+                    const newRecord = payload.new;
+                    if (newRecord && newRecord.symbol) {
+                        setTickers(prev => prev.map(t => {
+                            if (t.symbol === newRecord.symbol) {
+                                // Merge the new record data, preserving calculated fields if needed
+                                // Assuming sync_percent and sync_status are the main things changing effectively
+                                return {
+                                    ...t,
+                                    ...newRecord,
+                                    // Ensure fallback for sync_percent if it comes back null for some reason (though it shouldn't)
+                                    sync_percent: newRecord.sync_percent || 0,
+                                    // Preserve last_synthesis logic if updated_at is just sync status
+                                    last_synthesis: t.last_synthesis
+                                };
+                            }
+                            return t;
+                        }));
+                    }
                 })
                 .subscribe();
 
             return () => { supabase.removeChannel(channel); };
         }
     }, [isAuthorized]);
+
+    const [showRegenAllDialog, setShowRegenAllDialog] = useState(false);
 
     const [market, setMarket] = useState<'US' | 'INDIA'>('US');
 
@@ -159,7 +202,6 @@ export default function AdminPage() {
             setTickers(prev => prev.map(t => t.symbol === symbol ? { ...t, sync_status: 'QUEUED', sync_percent: 1 } : t));
 
             toast({
-
                 title: "Regeneration Started",
                 description: `Forcing fresh ${tickerMarket} synthesis for ${symbol}...`,
             });
@@ -171,6 +213,46 @@ export default function AdminPage() {
                 variant: "destructive"
             });
         }
+    };
+
+    const [isRegeneratingAll, setIsRegeneratingAll] = useState(false);
+
+    const handleRegenerateAll = async () => {
+        setIsRegeneratingAll(true);
+
+        // Optimistic update: set everything to QUEUED immediately
+        setTickers(prev => prev.map(t => ({
+            ...t,
+            sync_status: 'QUEUED',
+            sync_percent: 1
+        })));
+
+        let successCount = 0;
+        let failCount = 0;
+
+        // Process in small batches or with enough delay to let Inngest handle it
+        for (const t of tickers) {
+            try {
+                const endpoint = t.market === 'INDIA' ? '/api/analyze/india' : '/api/analyze';
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ticker: t.symbol })
+                });
+                if (res.ok) successCount++;
+                else failCount++;
+            } catch (e) {
+                failCount++;
+            }
+        }
+
+        toast({
+            title: "Bulk Regeneration Triggered",
+            description: `Successfully queued ${successCount} assets. ${failCount} failed.`,
+            variant: failCount > 0 ? "destructive" : "default"
+        });
+        setIsRegeneratingAll(false);
+        setShowRegenAllDialog(false);
     };
 
 
@@ -310,9 +392,19 @@ export default function AdminPage() {
                             <RotateCcw className="w-4 h-4 text-slate-400" />
                             <h2 className="text-xs font-bold uppercase tracking-widest text-slate-400">Universe Management</h2>
                         </div>
-                        <span className="text-[10px] font-mono text-slate-600 bg-white/5 px-2 py-0.5 rounded uppercase tracking-wider">
-                            {tickers.length} Assets Tracked
-                        </span>
+                        <div className="flex items-center gap-4">
+                            <button
+                                onClick={() => setShowRegenAllDialog(true)}
+                                disabled={isRegeneratingAll || tickers.length === 0}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 text-[10px] font-bold uppercase tracking-widest transition-all border border-orange-500/20 disabled:opacity-50"
+                            >
+                                {isRegeneratingAll ? <Loader2 className="w-3 h-3 animate-spin" /> : <RotateCcw className="w-3 h-3" />}
+                                Sync Universe
+                            </button>
+                            <span className="text-[10px] font-mono text-slate-600 bg-white/5 px-2 py-0.5 rounded uppercase tracking-wider">
+                                {tickers.length} Assets Tracked
+                            </span>
+                        </div>
                     </div>
 
                     <GlassCard className="p-0 border-white/5 bg-white/[0.02] overflow-hidden" hoverEffect={false}>
@@ -334,7 +426,17 @@ export default function AdminPage() {
                                                         {t.market || 'US'}
                                                     </div>
                                                 </div>
-                                                <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider truncate max-w-[200px]">{t.company_name}</div>
+                                                <div className="flex items-center gap-3 mt-1">
+                                                    <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider truncate max-w-[180px]">{t.company_name}</div>
+                                                    <>
+                                                        <div className="w-1 h-1 rounded-full bg-slate-800" />
+                                                        <div className="text-[9px] font-mono text-slate-600 uppercase">
+                                                            {t.last_synthesis
+                                                                ? new Date(t.last_synthesis).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                                                : '---'}
+                                                        </div>
+                                                    </>
+                                                </div>
 
                                                 {t.sync_status && t.sync_status !== 'IDLE' && (
                                                     <div className="mt-2 w-full max-w-[150px] space-y-1">
@@ -345,7 +447,7 @@ export default function AdminPage() {
                                                         <div className="h-1 bg-white/5 rounded-full overflow-hidden">
                                                             <div
                                                                 className="h-full bg-white transition-all duration-500 shadow-[0_0_8px_white]"
-                                                                style={{ width: `${t.sync_percent}%` }}
+                                                                style={{ width: `${t.sync_percent || 0}%` }}
                                                             />
                                                         </div>
                                                     </div>
@@ -383,6 +485,14 @@ export default function AdminPage() {
                     </p>
                 </div>
             </div >
+
+            <RegenerateConfirmDialog
+                isOpen={showRegenAllDialog}
+                onClose={() => setShowRegenAllDialog(false)}
+                onConfirm={handleRegenerateAll}
+                count={tickers.length}
+                isLoading={isRegeneratingAll}
+            />
         </div >
     );
 }
