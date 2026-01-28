@@ -47,18 +47,28 @@ export default function Home() {
       .select('*')
       .order('symbol', { ascending: true });
 
+
+
     if (data && data.length > 0) {
       setTickers(data);
       if (!selectedSymbol) {
         const hasAAPL = data.find(t => t.symbol === "AAPL");
         setSelectedSymbol(hasAAPL ? "AAPL" : data[0].symbol);
       }
+    } else {
+      setTickers([]);
     }
     setLoading(false);
   }, [selectedSymbol]);
 
+
   const fetchTickerDetails = useCallback(async (symbol: string) => {
+    setInsight(null);
+    setTickerData(null);
+    setFinancials([]);
+
     const { data: insights } = await supabase
+
       .from('ai_insights')
       .select('*')
       .eq('symbol', symbol)
@@ -88,7 +98,9 @@ export default function Home() {
 
   const fetchPrices = useCallback(async (symbol: string) => {
     setLoadingPrices(true);
+    setPrices([]); // Reset prices to prevent stale chart display
     try {
+
       // 1. Try fetching from Supabase first (Task 6)
       const { data: dbPrices } = await supabase
         .from('market_data')
@@ -102,17 +114,10 @@ export default function Home() {
           close: p.close
         })));
         setLoadingPrices(false);
-        return;
-      }
-
-      // 2. Fallback to API if not in DB yet (e.g. initial scan)
-      const res = await fetch(`/api/prices/${symbol}`);
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        setPrices(data.reverse());
       }
     } catch (e) {
       console.error(e);
+
     } finally {
       setLoadingPrices(false);
     }
@@ -166,16 +171,20 @@ export default function Home() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
-  if (loading && tickers.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4">
-        <Loader2 className="w-12 h-12 text-slate-500 animate-spin" />
-        <p className="text-slate-500 font-medium">Igniting engines...</p>
-      </div>
-    );
-  }
+  // Currency Helper
+  const currencySymbol = insight?.metadata?.currency === 'INR' ? '₹' : '$';
+  const isIndian = insight?.metadata?.currency === 'INR';
 
-  const chartColor = (insight?.metadata?.changesPercentage || 0) >= 0 ? '#10b981' : '#ef4444';
+  const getRawChanges = () => {
+    const cp = insight?.metadata?.changesPercentage;
+    if (typeof cp === 'object' && cp !== null) {
+      return parseFloat(cp.NSE || cp.BSE) || 0;
+    }
+    return cp || 0;
+  };
+
+  const chartColor = getRawChanges() >= 0 ? '#10b981' : '#ef4444';
+
 
   return (
     <div className="space-y-6">
@@ -319,7 +328,12 @@ export default function Home() {
                         {tickerData?.company_name || selectedSymbol}
                       </h3>
                       <div className="flex items-center gap-2">
-                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{tickerData?.exchange || 'MARKET'}</p>
+                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                          {typeof tickerData?.exchange === 'object'
+                            ? Object.keys(tickerData.exchange).join(' / ')
+                            : (tickerData?.exchange || 'MARKET')}
+                        </p>
+
                         {insight?.created_at && (
                           <div className="flex items-center gap-1 bg-slate-800/50 px-2 py-0.5 rounded border border-white/5">
                             <div className="w-1.5 h-1.5 rounded-full bg-amber-500/50" />
@@ -330,12 +344,27 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-2xl font-bold font-mono text-white">${insight?.metadata?.price || '---'}</div>
+                    <div className="text-2xl font-bold font-mono text-white">
+                      {currencySymbol}{typeof insight?.metadata?.price === 'object'
+                        ? (insight.metadata.price.NSE || insight.metadata.price.BSE || '---')
+                        : (insight?.metadata?.price || '---')}
+                    </div>
+
                     {insight?.metadata?.changesPercentage !== undefined && (
-                      <div className={cn("text-xs font-bold", insight.metadata.changesPercentage >= 0 ? "text-emerald-500" : "text-red-500")}>
-                        {insight.metadata.changesPercentage >= 0 ? '+' : ''}{insight.metadata.changesPercentage}%
+                      <div className={cn("text-xs font-bold",
+                        (typeof insight.metadata.changesPercentage === 'object'
+                          ? (parseFloat(insight.metadata.changesPercentage.NSE || insight.metadata.changesPercentage.BSE) || 0)
+                          : insight.metadata.changesPercentage) >= 0 ? "text-emerald-500" : "text-red-500"
+                      )}>
+                        {(typeof insight.metadata.changesPercentage === 'object'
+                          ? (parseFloat(insight.metadata.changesPercentage.NSE || insight.metadata.changesPercentage.BSE) || 0)
+                          : insight.metadata.changesPercentage) >= 0 ? '+' : ''}
+                        {typeof insight.metadata.changesPercentage === 'object'
+                          ? (insight.metadata.changesPercentage.NSE || insight.metadata.changesPercentage.BSE)
+                          : insight.metadata.changesPercentage}%
                       </div>
                     )}
+
                   </div>
                 </div>
 
@@ -369,7 +398,7 @@ export default function Home() {
                               >
                                 <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider text-center">{dateStr}</span>
                                 <div className="h-3 w-px bg-white/10" />
-                                <span className="text-sm font-bold text-white font-mono tracking-tight">${priceStr}</span>
+                                <span className="text-sm font-bold text-white font-mono tracking-tight">{currencySymbol}{priceStr}</span>
                               </div>,
                               document.body
                             );
@@ -401,7 +430,10 @@ export default function Home() {
                     <MetricCopilot
                       key={i}
                       label={m.label}
-                      value={m.value}
+                      value={typeof m.value === 'object'
+                        ? (m.value.NSE || m.value.BSE || JSON.stringify(m.value))
+                        : m.value}
+
                       status={m.status}
                       shortExplanation={m.shortExplanation}
                       technicalDefinition={m.technicalDefinition}
@@ -419,32 +451,44 @@ export default function Home() {
             <div className="flex flex-col gap-6 lg:sticky lg:top-24">
               <div className="flex items-center gap-2 mb-2">
                 <ShieldAlert className="w-4 h-4 text-amber-500" />
-                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 text-glow-amber">SEC Regulatory Truth</h2>
+                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 text-glow-amber">
+                  {isIndian ? 'Corporate Actions & Regulatory Insights' : 'SEC Regulatory Truth'}
+                </h2>
               </div>
 
               <GlassCard className="p-6 border-amber-500/10 bg-amber-500/[0.02]">
                 {insight?.metadata?.sec_analysis ? (
                   <div className="space-y-6">
                     <div>
-                      <h4 className="text-[10px] font-bold text-amber-500/80 uppercase mb-2 tracking-wider">SEC Synthesis</h4>
+                      <h4 className="text-[10px] font-bold text-amber-500/80 uppercase mb-2 tracking-wider">
+                        {isIndian ? 'Regulatory Pulse' : 'SEC Synthesis'}
+                      </h4>
                       <p className="text-sm leading-relaxed text-slate-300">{insight.metadata.sec_analysis}</p>
                     </div>
 
                     <div className="pt-4 border-t border-white/5 space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="text-[10px] text-slate-500 font-bold uppercase">Last Filing</span>
-                        <span className="text-[9px] bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded font-bold">{insight.metadata.last_sec_filing}</span>
+                        <span className="text-[10px] text-slate-500 font-bold uppercase">
+                          {isIndian ? 'Exchange Source' : 'Last Filing'}
+                        </span>
+                        <span className="text-[9px] bg-amber-500/20 text-amber-200 px-2 py-0.5 rounded font-bold uppercase">
+                          {isIndian ? (tickerData?.exchange || 'NSE/BSE') : insight.metadata.last_sec_filing}
+                        </span>
                       </div>
                     </div>
 
                     <a
-                      href={`https://www.sec.gov/cgi-bin/browse-edgar?CIK=${insight.metadata?.cik || selectedSymbol}&action=getcompany`}
+                      href={isIndian
+                        ? `https://www.sebi.gov.in/search.html?searchval=${selectedSymbol}`
+                        : `https://www.sec.gov/cgi-bin/browse-edgar?CIK=${insight.metadata?.cik || selectedSymbol}&action=getcompany`
+                      }
                       target="_blank"
                       rel="noopener noreferrer"
                       className="block w-full text-center py-2.5 rounded-xl bg-amber-500/10 hover:bg-white/10 text-amber-400 text-[10px] font-bold uppercase tracking-widest transition-all"
                     >
-                      View SEC History
+                      {isIndian ? 'Search on SEBI' : 'View SEC History'}
                     </a>
+
                   </div>
                 ) : (
                   <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -497,7 +541,12 @@ export default function Home() {
                           </p>
                           <div className="flex items-center justify-between text-[8px] uppercase font-bold text-slate-600">
                             <span>{news.source}</span>
-                            <span>{new Date(news.datetime * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>
+                              {news.datetime
+                                ? new Date(news.datetime * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
+                                : (news.date ? news.date : 'Recent')}
+                            </span>
+
                           </div>
                         </a>
                       ))}
@@ -614,23 +663,33 @@ export default function Home() {
                           <tr key={i} className="hover:bg-white/[0.02] transition-colors">
                             <td className="p-4 text-[11px] font-mono text-slate-400">{f.period}</td>
                             <td className="p-4 text-[11px] font-mono text-emerald-400">
-                              ${((f.income_statement?.revenue || 0) / 1e9).toFixed(2)}B
+                              {currencySymbol}{isIndian
+                                ? ((f.income_statement?.revenue || 0) / 1e7).toFixed(1) + ' Cr'
+                                : ((f.income_statement?.revenue || 0) / 1e9).toFixed(2) + 'B'}
                             </td>
                             <td className="p-4 text-[11px] font-mono text-sky-400">
-                              ${((f.income_statement?.netIncome || 0) / 1e9).toFixed(2)}B
+                              {currencySymbol}{isIndian
+                                ? ((f.income_statement?.netIncome || 0) / 1e7).toFixed(1) + ' Cr'
+                                : ((f.income_statement?.netIncome || 0) / 1e9).toFixed(2) + 'B'}
                             </td>
                             <td className="p-4 text-[11px] font-mono text-slate-300">
-                              ${((f.balance_sheet?.totalAssets || 0) / 1e9).toFixed(2)}B
+                              {currencySymbol}{isIndian
+                                ? ((f.balance_sheet?.totalAssets || 0) / 1e7).toFixed(1) + ' Cr'
+                                : ((f.balance_sheet?.totalAssets || 0) / 1e9).toFixed(2) + 'B'}
                             </td>
                             <td className="p-4 text-[11px] font-mono text-slate-300">
-                              ${((f.balance_sheet?.totalTotalLiabilities || 0) / 1e9).toFixed(2)}B
+                              {currencySymbol}{isIndian
+                                ? ((f.balance_sheet?.totalTotalLiabilities || 0) / 1e7).toFixed(1) + ' Cr'
+                                : ((f.balance_sheet?.totalTotalLiabilities || 0) / 1e9).toFixed(2) + 'B'}
                             </td>
+
+
                           </tr>
                         ))
                       ) : (
                         <tr>
                           <td colSpan={5} className="p-10 text-center text-slate-600 italic text-xs">
-                            Deep financial history scan in progress...
+                            No data available
                           </td>
                         </tr>
                       )}

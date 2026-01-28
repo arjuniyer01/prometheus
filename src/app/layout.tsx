@@ -49,6 +49,9 @@ export default function RootLayout({
               <span className="text-xl font-bold font-outfit tracking-tight">PROMETHEUS</span>
             </div>
 
+            <div className="flex items-center gap-4">
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/10">Unified Nexus</span>
+            </div>
 
           </div>
         </header>

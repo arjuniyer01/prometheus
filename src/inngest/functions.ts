@@ -23,7 +23,9 @@ export const analyzeTicker = inngest.createFunction(
 
         await step.run("clear-old-data", async () => {
             console.log(`Clearing old analysis data for ${ticker}...`);
-            const { error } = await supabase.from('ai_insights').delete().eq('symbol', ticker);
+            // Initialize sync status
+            await supabase.from('tickers').update({ sync_status: 'FETCHING', sync_percent: 5 }).eq('symbol', ticker);
+            const { error } = await supabase.from('ai_insights').delete().eq('symbol', ticker).eq('market', 'US');
             if (error) throw error;
         });
 
@@ -74,6 +76,10 @@ export const analyzeTicker = inngest.createFunction(
             };
         }) as any;
 
+        await step.run("update-status-sec", async () => {
+            await supabase.from('tickers').update({ sync_status: 'FETCHING', sync_percent: 30 }).eq('symbol', ticker);
+        });
+
         const secData = await step.run("fetch-sec-data", async () => {
             console.log(`Fetching SEC data for ${ticker} (CIK: ${data.profile.cik})...`);
             const sec = await getSECSubmissions(data.profile.cik);
@@ -83,6 +89,10 @@ export const analyzeTicker = inngest.createFunction(
         const newsData = await step.run("fetch-news", async () => {
             console.log(`Fetching News for ${ticker}...`);
             return await getNews(ticker);
+        });
+
+        await step.run("update-status-analyzing", async () => {
+            await supabase.from('tickers').update({ sync_status: 'ANALYZING', sync_percent: 60 }).eq('symbol', ticker);
         });
 
         const aiAnalysis = await step.run("generate-ai-insights", async () => {
@@ -156,6 +166,10 @@ export const analyzeTicker = inngest.createFunction(
             return await generateStructuredAnalysis(prompt);
         });
 
+        await step.run("update-status-persisting", async () => {
+            await supabase.from('tickers').update({ sync_status: 'PERSISTING', sync_percent: 85 }).eq('symbol', ticker);
+        });
+
         await step.run("persist-to-db", async () => {
             console.log(`Persisting results for ${ticker} to Supabase...`);
             // First ensure ticker exists
@@ -166,6 +180,7 @@ export const analyzeTicker = inngest.createFunction(
                 industry: data.profile.industry,
                 market_cap: data.profile.mktCap,
                 exchange: data.profile.exchange,
+                market: 'US'
             });
 
             if (tickerError) throw tickerError;
@@ -208,6 +223,7 @@ export const analyzeTicker = inngest.createFunction(
                 bear_case: aiAnalysis.bear_case,
                 metrics: aiAnalysis.metrics,
                 model_version: 'gemini-2.5-flash-lite',
+                market: 'US',
                 metadata: {
                     cik: data.profile.cik,
                     price: data.quote?.price || data.profile.price,
@@ -238,9 +254,16 @@ export const analyzeTicker = inngest.createFunction(
             });
 
             if (insightError) throw insightError;
+
+            // Mark as complete
+            await supabase.from('tickers').update({ sync_status: 'IDLE', sync_percent: 100 }).eq('symbol', ticker);
         });
 
         console.log(`Analysis complete for ${ticker}`);
         return { success: true, ticker };
     }
 );
+
+
+export * from "./functions-india";
+

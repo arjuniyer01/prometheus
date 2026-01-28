@@ -9,7 +9,7 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 - **Frontend**: Next.js 15 (App Router), Tailwind CSS v4, Lucide React, Recharts.
 - **Backend**: Supabase (Postgres, Realtime, Auth), Inngest (Serverless Workflows).
 - **AI**: Google Gemini 2.5 Flash Lite (Structured Output).
-- **Data**: Financial Modeling Prep (FMP), SEC EDGAR, Finnhub.
+- **Data**: Financial Modeling Prep (FMP), SEC EDGAR, Finnhub, IndianAPI.in (NSE/BSE).
 
 ### Development Rules & Lessons Learned
 1. **Design System**: Use the Institutional Monochrome palette (Silver/Slate/Black). Sectional color accents are reserved for data categorization: Amber for SEC Regulatory data, Sky Blue for Market Pulse/Sentiment, and Emerald/Red for bull/bear cases.
@@ -23,6 +23,12 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 9. **Dynamic Routing**: Mark all background API routes as `export const dynamic = 'force-dynamic'` to prevent Next.js from attempting to statically optimize paths that rely on runtime secrets.
 10. **Inngest Production Keys**: Ensure `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are set in Vercel. These are required for event triggers and secure communication with the Inngest Cloud.
 11. **FMP Stable API**: Prioritize the modern `/stable/` endpoints for paid users. The correct structure is `https://financialmodelingprep.com/stable/{endpoint}?symbol={symbol}&apikey={API_KEY}`. This format applies to `quote`, `profile`, `ratios`, `key-metrics`, and `historical-price-eod/full`.
+26. **Unified Market Architecture**: Avoid market-specific pages (e.g., `/india`). Use a single root `/` dashboard that dynamically adapts to the asset's `market` tag. Implement `currencySymbol` and `regulatoryLabel` helpers to switch between $ vs ₹ and SEC vs SEBI based on metadata.
+27. **IndianAPI Integration**:
+    - **Authentication**: Use `x-api-key` header, NOT query parameters.
+    - **Parameter Naming**: Use `name` for the `/stock` endpoint and `stock_name` for `/statement` and `/historical_data`.
+    - **Data Extraction**: IndianAPI often returns dual-exchange objects `{ NSE: value, BSE: value }`. Use a safe `extractValue` helper to prioritize `NSE` and prevent React "Objects are not valid as a React child" crashes.
+    - **Rate Limiting**: Strictly adhere to the **1 request/second** limit. Implement Inngest `throttle` (limit: 1, period: "1s") and explicit `step.sleep("1s")` between consecutive API calls in Indian workflows.
 
 ### Completed Tasks
 - [x] Institutional Monochrome UI Overhaul (Silver/Slate/Black).
@@ -36,14 +42,20 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 - [x] API Validation suite (`npm test`) reaching 100% green status.
 - [x] Sentiment-aware UI elements (dynamic progress bars and labels).
 - [x] UI Cleanup: Removed redundant stock avatars, blinking pulse, and info icons.
-- [x] Historical Price Caching: Implemented Supabase persistence for price data to reduce API load.
+- [x] Historical Price Caching: Mandated use of Supabase for all chart data. The UI no longer falls back to internal API routes to protect rate limits; prices must be persisted during the admin generation/regeneration workflow.
 - [x] Enhanced Synthesis: Prompt engineering to include multiple SEC filings and stock-specific market pulse.
 - [x] UX Polish: Search-based navigation replaced ticker tab bars for improved scalability.
 - [x] Admin terminal (/admin) for gated stock initialization and regeneration.
 - [x] Secured "Analysis" and "Regenerate" actions by moving them to an authenticated admin route.
+- [x] Unified Market Expansion: Single dashboard architecture supporting both US and Indian markets.
+- [x] Dynamic Regional UX: Automatic currency switching ($/₹) and regulatory rebranding (SEC/SEBI) based on asset metadata.
+- [x] IndianAPI.in Integration: Standardized scrapers for NSE/BSE profile, financials, and news headlines.
+- [x] Throttled Indian Workflows: Inngest-based 1 req/s rate-limit protection for Indian data ingestion.
 
 ### Pending Tasks
-- [ ] Implement Realtime websocket subscription for minute-by-minute price updates.
+- [ ] Implement Upstox WebSocket for real-time NSE/BSE price ticks.
+- [ ] Automated Bhavcopy Ingestion Engine for local Indian historical data.
+- [ ] Implement Realtime websocket subscription for minute-by-minute price updates (US).
 - [ ] Add PDF export for "Prometheus Briefings".
 - [ ] Integrate deeper fundamental analysis (DCF models, Peer Comparison).
 - [ ] Expand Social Sentiment to include Reddit/X via specialized scrapers.

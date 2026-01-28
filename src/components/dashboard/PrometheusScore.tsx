@@ -8,6 +8,55 @@ interface PrometheusScoreProps {
     metadata: any;
 }
 
+const WeightKnob = ({ label, value, color, onChange }: { label: string, value: number, color: string, onChange: (v: number) => void }) => {
+    const colorMap: Record<string, string> = {
+        emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20 fill-emerald-500/40',
+        amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20 fill-amber-500/40',
+        sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20 fill-sky-500/40',
+        purple: 'text-purple-400 bg-purple-500/10 border-purple-500/20 fill-purple-500/40',
+    };
+
+    const barColorMap: Record<string, string> = {
+        emerald: 'bg-emerald-500/40',
+        amber: 'bg-amber-500/40',
+        sky: 'bg-sky-500/40',
+        purple: 'bg-purple-500/40',
+    };
+
+    return (
+        <div className="flex items-center gap-3 bg-white/[0.02] border border-white/5 p-2 pr-3 rounded-2xl group transition-all hover:bg-white/[0.04]">
+            <div className={cn("w-7 h-7 rounded-xl flex items-center justify-center font-mono font-bold text-[10px]", colorMap[color])}>
+                {value}%
+            </div>
+            <div className="flex-1">
+                <div className="flex justify-between text-[8px] mb-1">
+                    <span className="text-slate-500 uppercase font-black tracking-[0.15em]">{label}</span>
+                </div>
+                <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                    <div
+                        className={cn("h-full transition-all duration-500", barColorMap[color])}
+                        style={{ width: `${value}%` }}
+                    />
+                </div>
+            </div>
+            <div className="flex items-center gap-1">
+                <button
+                    onClick={() => onChange(value - 5)}
+                    className="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center hover:bg-white/10 text-slate-400 active:scale-95 transition-all text-xs"
+                >
+                    -
+                </button>
+                <button
+                    onClick={() => onChange(value + 5)}
+                    className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center hover:bg-indigo-500/20 hover:text-white text-slate-200 font-bold active:scale-95 transition-all text-xs"
+                >
+                    +
+                </button>
+            </div>
+        </div>
+    );
+};
+
 export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [weights, setWeights] = useState({ financial: 35, sec: 25, sentiment: 20, trend: 20 });
@@ -109,7 +158,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                 <div className="mt-4 p-4 rounded-xl bg-slate-950/50 border border-white/5 space-y-4 animate-in slide-in-from-top-2 fade-in duration-300">
                     <div className="space-y-2">
                         <p className="text-[10px] text-slate-400 font-mono">
-                            <span className="text-indigo-400">Score</span> = ({weights.financial}% × <span className="text-emerald-400">Fin</span>) + ({weights.sec}% × <span className="text-amber-400">SEC</span>) + ({weights.sentiment}% × <span className="text-sky-400">Sent</span>) + ({weights.trend}% × <span className="text-purple-400">Trend</span>)
+                            <span className="text-indigo-400">Score</span> = ({weights.financial}% × <span className="text-emerald-400">Fin</span>) + ({weights.sec}% × <span className="text-amber-400">Regl</span>) + ({weights.sentiment}% × <span className="text-sky-400">Sent</span>) + ({weights.trend}% × <span className="text-purple-400">Trend</span>)
                         </p>
                         <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-white">
                             <span>{computedScore}</span>
@@ -124,64 +173,54 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                         </div>
                     </div>
 
-                    {/* Weight Sliders */}
+                    {/* Precision Weight Controls */}
                     <div className="space-y-4 pt-4 border-t border-white/5">
-                        <h5 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
-                            <Settings2 className="w-3 h-3" /> Adjust Weights
-                        </h5>
-                        <div className="space-y-3">
-                            <div>
-                                <div className="flex justify-between text-[10px] mb-1.5">
-                                    <span className="text-emerald-400">Financials</span>
-                                    <span className="text-slate-400">{weights.financial}%</span>
-                                </div>
-                                <Slider
-                                    value={[weights.financial]}
-                                    max={100}
-                                    step={5}
-                                    className="[&>.bg-primary]:bg-emerald-500"
-                                    onValueChange={(val: number[]) => adjustWeights('financial', val[0])}
-                                />
+                        <div className="flex items-center justify-between">
+                            <h5 className="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-2">
+                                <Settings2 className="w-3 h-3" /> Priority Knobs
+                            </h5>
+                            <div className="flex gap-2">
+                                {[
+                                    { label: 'Bal', w: { financial: 25, sec: 25, sentiment: 25, trend: 25 } },
+                                    { label: 'Value', w: { financial: 50, sec: 30, sentiment: 10, trend: 10 } },
+                                    { label: 'Risk', w: { financial: 20, sec: 50, sentiment: 10, trend: 20 } },
+                                ].map((preset) => (
+                                    <button
+                                        key={preset.label}
+                                        onClick={() => setWeights(preset.w)}
+                                        className="text-[8px] font-black uppercase px-2 py-1 rounded bg-white/5 border border-white/5 hover:bg-indigo-500/20 hover:border-indigo-500/30 text-slate-400 hover:text-indigo-300 transition-all"
+                                    >
+                                        {preset.label}
+                                    </button>
+                                ))}
                             </div>
-                            <div>
-                                <div className="flex justify-between text-[10px] mb-1.5">
-                                    <span className="text-amber-400">SEC Risk</span>
-                                    <span className="text-slate-400">{weights.sec}%</span>
-                                </div>
-                                <Slider
-                                    value={[weights.sec]}
-                                    max={100}
-                                    step={5}
-                                    className="[&>.bg-primary]:bg-amber-500"
-                                    onValueChange={(val: number[]) => adjustWeights('sec', val[0])}
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-[10px] mb-1.5">
-                                    <span className="text-sky-400">Market Sentiment</span>
-                                    <span className="text-slate-400">{weights.sentiment}%</span>
-                                </div>
-                                <Slider
-                                    value={[weights.sentiment]}
-                                    max={100}
-                                    step={5}
-                                    className="[&>.bg-primary]:bg-sky-500"
-                                    onValueChange={(val: number[]) => adjustWeights('sentiment', val[0])}
-                                />
-                            </div>
-                            <div>
-                                <div className="flex justify-between text-[10px] mb-1.5">
-                                    <span className="text-purple-400">Momentum & Trends</span>
-                                    <span className="text-slate-400">{weights.trend}%</span>
-                                </div>
-                                <Slider
-                                    value={[weights.trend]}
-                                    max={100}
-                                    step={5}
-                                    className="[&>.bg-primary]:bg-purple-500"
-                                    onValueChange={(val: number[]) => adjustWeights('trend', val[0])}
-                                />
-                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2">
+                            <WeightKnob
+                                label="Financials"
+                                value={weights.financial}
+                                color="emerald"
+                                onChange={(v) => adjustWeights('financial', v)}
+                            />
+                            <WeightKnob
+                                label="Regulatory"
+                                value={weights.sec}
+                                color="amber"
+                                onChange={(v) => adjustWeights('sec', v)}
+                            />
+                            <WeightKnob
+                                label="Sentiment"
+                                value={weights.sentiment}
+                                color="sky"
+                                onChange={(v) => adjustWeights('sentiment', v)}
+                            />
+                            <WeightKnob
+                                label="Momentum"
+                                value={weights.trend}
+                                color="purple"
+                                onChange={(v) => adjustWeights('trend', v)}
+                            />
                         </div>
                     </div>
 

@@ -6,6 +6,7 @@ import { GlassCard } from "@/components/ui/GlassCard";
 import { Loader2, Plus, RotateCcw, ShieldCheck, LogOut, LayoutDashboard } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import Link from "next/link";
+import { cn } from "@/lib/utils";
 
 export default function AdminPage() {
     const [password, setPassword] = useState("");
@@ -92,6 +93,8 @@ export default function AdminPage() {
         }
     }, [isAuthorized]);
 
+    const [market, setMarket] = useState<'US' | 'INDIA'>('US');
+
     const handleAddTicker = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!newTicker) return;
@@ -100,7 +103,8 @@ export default function AdminPage() {
         const upperTicker = newTicker.toUpperCase();
 
         try {
-            const res = await fetch('/api/analyze', {
+            const endpoint = market === 'INDIA' ? '/api/analyze/india' : '/api/analyze';
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ticker: upperTicker })
@@ -108,8 +112,19 @@ export default function AdminPage() {
 
             if (!res.ok) throw new Error("Failed to trigger analysis");
 
+            // Optimistic update for new ticker
+            const tempTicker = {
+                symbol: upperTicker,
+                company_name: 'Initializing...',
+                market: market,
+                sync_status: 'QUEUED',
+                sync_percent: 1
+            };
+            setTickers(prev => [...prev, tempTicker].sort((a, b) => a.symbol.localeCompare(b.symbol)));
+
             toast({
-                title: "Analysis Initialized",
+
+                title: `${market} Analysis Initialized`,
                 description: `Deep scan for ${upperTicker} is now in the queue.`,
             });
             setNewTicker("");
@@ -125,9 +140,14 @@ export default function AdminPage() {
         }
     };
 
+
     const handleRegenerate = async (symbol: string) => {
+        const ticker = tickers.find(t => t.symbol === symbol);
+        const tickerMarket = ticker?.market || 'US';
+
         try {
-            const res = await fetch('/api/analyze', {
+            const endpoint = tickerMarket === 'INDIA' ? '/api/analyze/india' : '/api/analyze';
+            const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ticker: symbol })
@@ -135,9 +155,13 @@ export default function AdminPage() {
 
             if (!res.ok) throw new Error("Failed to trigger regeneration");
 
+            // Optimistic update
+            setTickers(prev => prev.map(t => t.symbol === symbol ? { ...t, sync_status: 'QUEUED', sync_percent: 1 } : t));
+
             toast({
+
                 title: "Regeneration Started",
-                description: `Forcing fresh synthesis for ${symbol}...`,
+                description: `Forcing fresh ${tickerMarket} synthesis for ${symbol}...`,
             });
         } catch (err: any) {
             console.error(err);
@@ -148,6 +172,7 @@ export default function AdminPage() {
             });
         }
     };
+
 
     const handleLogout = () => {
         sessionStorage.removeItem("admin_auth_prometheus");
@@ -234,15 +259,40 @@ export default function AdminPage() {
 
                     <GlassCard className="p-6 border-white/5 bg-white/[0.02]" hoverEffect={false}>
                         <form onSubmit={handleAddTicker} className="space-y-4">
-                            <p className="text-xs text-slate-500 leading-relaxed mb-2">
-                                Enter a ticker symbol to begin deep synthesis. This will trigger the full Inngest workflow (FMP, SEC, Sentiment).
+                            <p className="text-xs text-slate-500 leading-relaxed mb-6">
+                                Enter a ticker symbol to begin deep synthesis. This will trigger the market-specific workflow.
                             </p>
+
+                            <div className="flex bg-white/5 rounded-xl p-1 mb-4 border border-white/10">
+                                <button
+                                    type="button"
+                                    onClick={() => setMarket('US')}
+                                    className={cn(
+                                        "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all",
+                                        market === 'US' ? "bg-white text-black shadow-lg" : "text-slate-500 hover:text-white"
+                                    )}
+                                >
+                                    US Market
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setMarket('INDIA')}
+                                    className={cn(
+                                        "flex-1 py-2 text-[10px] font-bold uppercase tracking-widest rounded-lg transition-all",
+                                        market === 'INDIA' ? "bg-emerald-500 text-black shadow-lg" : "text-slate-500 hover:text-emerald-400"
+                                    )}
+                                >
+                                    India Market
+                                </button>
+                            </div>
+
                             <input
-                                placeholder="e.g. BTC, NVDA, AAPL"
+                                placeholder={market === 'US' ? "e.g. NVDA, AAPL" : "e.g. LENSKART, RELIANCE"}
                                 className="w-full h-14 bg-white/5 border border-white/10 rounded-2xl px-6 text-white focus:outline-none focus:ring-1 focus:ring-white/50 uppercase text-lg font-mono font-bold"
                                 value={newTicker}
                                 onChange={(e) => setNewTicker(e.target.value)}
                             />
+
                             <button
                                 type="submit"
                                 disabled={addingTicker || !newTicker}
@@ -275,17 +325,47 @@ export default function AdminPage() {
                                                 {t.symbol[0]}
                                             </div>
                                             <div>
-                                                <div className="text-base font-bold text-white font-mono leading-none mb-1">{t.symbol}</div>
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <div className="text-base font-bold text-white font-mono leading-none">{t.symbol}</div>
+                                                    <div className={cn(
+                                                        "text-[8px] font-bold px-1.5 py-0.5 rounded border",
+                                                        t.market === 'INDIA' ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400" : "bg-white/10 border-white/20 text-slate-400"
+                                                    )}>
+                                                        {t.market || 'US'}
+                                                    </div>
+                                                </div>
                                                 <div className="text-[10px] text-slate-500 font-bold uppercase tracking-wider truncate max-w-[200px]">{t.company_name}</div>
+
+                                                {t.sync_status && t.sync_status !== 'IDLE' && (
+                                                    <div className="mt-2 w-full max-w-[150px] space-y-1">
+                                                        <div className="flex justify-between text-[8px] font-bold uppercase tracking-tighter text-slate-400">
+                                                            <span>{t.sync_status}</span>
+                                                            <span>{t.sync_percent}%</span>
+                                                        </div>
+                                                        <div className="h-1 bg-white/5 rounded-full overflow-hidden">
+                                                            <div
+                                                                className="h-full bg-white transition-all duration-500 shadow-[0_0_8px_white]"
+                                                                style={{ width: `${t.sync_percent}%` }}
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
+
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <button
                                                 onClick={() => handleRegenerate(t.symbol)}
-                                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5 transition-all text-[10px] font-bold uppercase tracking-widest"
+
+                                                disabled={t.sync_status && t.sync_status !== 'IDLE'}
+                                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5 transition-all text-[10px] font-bold uppercase tracking-widest disabled:opacity-50 disabled:cursor-not-allowed"
                                             >
-                                                <RotateCcw className="w-3 h-3" />
-                                                Force Re-Sync
+                                                {t.sync_status && t.sync_status !== 'IDLE' ? (
+                                                    <Loader2 className="w-3 h-3 animate-spin" />
+                                                ) : (
+                                                    <RotateCcw className="w-3 h-3" />
+                                                )}
+                                                {t.sync_status && t.sync_status !== 'IDLE' ? t.sync_status : 'Force Re-Sync'}
                                             </button>
                                         </div>
                                     </div>
@@ -302,7 +382,7 @@ export default function AdminPage() {
                         Warning: Regeneration consumes Gemini & FMP API credits.
                     </p>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 }
