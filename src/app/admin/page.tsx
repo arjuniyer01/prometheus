@@ -24,27 +24,15 @@ export default function AdminPage() {
         setLoading(true);
 
         try {
-            // Fetch the fixed password from Supabase
-            // Assuming a table 'admin_config' with config_key='admin_password'
-            const { data, error } = await supabase
-                .from('admin_config')
-                .select('config_value')
-                .eq('config_key', 'admin_password')
-                .single();
+            const res = await fetch('/api/admin/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ password })
+            });
 
-            if (error || !data) {
-                // If table doesn't exist, we might want to check an env var or show an error
-                console.error("Supabase error or no data:", error);
-                toast({
-                    title: "Configuration Error",
-                    description: "Admin password not found in Supabase. Ensure 'admin_config' table exists with 'admin_password' key.",
-                    variant: "destructive",
-                });
-                setLoading(false);
-                return;
-            }
+            const data = await res.json();
 
-            if (password === data.config_value) {
+            if (res.ok && data.success) {
                 setIsAuthorized(true);
                 sessionStorage.setItem("admin_auth_prometheus", "true");
                 toast({
@@ -53,8 +41,8 @@ export default function AdminPage() {
                 });
             } else {
                 toast({
-                    title: "Invalid Access Key",
-                    description: "The provided password does not match our records.",
+                    title: "Access Denied",
+                    description: data.error || "The provided password does not match our records.",
                     variant: "destructive",
                 });
             }
@@ -62,7 +50,7 @@ export default function AdminPage() {
             console.error(err);
             toast({
                 title: "Connection Error",
-                description: err.message,
+                description: "Failed to verify credentials.",
                 variant: "destructive",
             });
         } finally {
