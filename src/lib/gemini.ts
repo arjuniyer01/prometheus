@@ -20,16 +20,20 @@ export async function generateStructuredAnalysis(prompt: string) {
             const response = await ai.models.generateContent({
                 model: model,
                 contents: prompt,
-            });
+                config: {
+                    responseMimeType: "application/json",
+                }
+            } as any);
 
             const text = response.text || "";
             if (!text) throw new Error(`${model} returned empty response`);
 
-            // Strip markdown blocks if present
-            const jsonMatch = text.match(/```json\n([\s\S]*?)\n```/) || text.match(/```([\s\S]*?)```/);
-            const jsonString = jsonMatch ? jsonMatch[1] : text;
-
-            return JSON.parse(jsonString);
+            try {
+                return JSON.parse(text);
+            } catch (e) {
+                console.error(`[GEMINI] JSON parse failed even in JSON mode for ${model}:`, e);
+                throw e;
+            }
         } catch (error: any) {
             lastError = error;
             const isOverloaded = error?.status === 503 || error?.status === 429 || error?.message?.includes("overloaded") || error?.message?.includes("Too Many Requests");

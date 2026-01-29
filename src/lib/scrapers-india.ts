@@ -180,14 +180,12 @@ export async function getNewsMarketaux(symbol: string) {
 
 export async function getHistoricalPricesIndia(symbol: string) {
     try {
-        // Doc says /historical_data uses 'stock_name', 'period', 'filter'
         const data = await fetchIndianAPI('historical_data', {
             stock_name: symbol,
-            period: 'max',
+            period: '1yr',
             filter: 'price'
         });
         if (data && data.datasets && data.datasets[0] && data.datasets[0].values) {
-            // Map the [date, price] array format
             return data.datasets[0].values.map((v: any[]) => ({
                 date: v[0],
                 close: parseFloat(v[1]),
@@ -197,20 +195,57 @@ export async function getHistoricalPricesIndia(symbol: string) {
                 volume: 0
             }));
         }
-        // Fallback for array format if some endpoints return it
-        if (Array.isArray(data)) {
-            return data.map((p: any) => ({
-                date: p.date,
-                close: p.close,
-                open: p.open,
-                high: p.high,
-                low: p.low,
-                volume: p.volume
-            }));
-        }
         return [];
     } catch (error) {
         console.error(`Historical prices fetch failed for ${symbol} (India):`, error);
         return [];
+    }
+}
+
+/**
+ * Fetch trending stocks to proxy sector rotation
+ */
+export async function getTrendingIndia() {
+    try {
+        return await fetchIndianAPI('trending');
+    } catch (error) {
+        console.error("Trending stocks fetch failed (India):", error);
+        return [];
+    }
+}
+
+/**
+ * Fetch most active stocks to proxy capital flow
+ */
+export async function getNSEMostActiveIndia() {
+    try {
+        return await fetchIndianAPI('NSE_most_active');
+    } catch (error) {
+        console.error("NSE Most Active fetch failed:", error);
+        return [];
+    }
+}
+
+/**
+ * Search peers in industry to aggregate sector performance
+ */
+export async function searchIndustryIndia(industry: string) {
+    try {
+        return await fetchIndianAPI('industry_search', { query: industry });
+    } catch (error) {
+        console.error(`Industry search failed for ${industry}:`, error);
+        return [];
+    }
+}
+
+/**
+ * Fetch various historical stats (e.g., ratios)
+ */
+export async function getHistoricalStatsIndia(symbol: string, stats: string = 'ratios') {
+    try {
+        return await fetchIndianAPI('historical_stats', { stock_name: symbol, stats });
+    } catch (error) {
+        console.error(`Historical stats fetch failed for ${symbol}:`, error);
+        return null;
     }
 }

@@ -12,7 +12,7 @@ import {
 interface MetricCopilotProps {
     label: string;
     value: string | number;
-    status: 'positive' | 'negative' | 'neutral';
+    status: 'positive' | 'negative' | 'neutral' | 'bullish' | 'bearish';
     shortExplanation: string;
     technicalDefinition?: string;
     trend?: string;
@@ -26,7 +26,8 @@ export const MetricCopilot = ({
     technicalDefinition,
     trend
 }: MetricCopilotProps) => {
-    const safeStatus = (['positive', 'negative', 'neutral'].includes(status) ? status : 'neutral') as 'positive' | 'negative' | 'neutral';
+    const normalizedStatus = status === 'bullish' ? 'positive' : status === 'bearish' ? 'negative' : status;
+    const safeStatus = (['positive', 'negative', 'neutral'].includes(normalizedStatus) ? normalizedStatus : 'neutral') as 'positive' | 'negative' | 'neutral';
 
     const statusColors = {
         positive: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20",
@@ -64,7 +65,6 @@ export const MetricCopilot = ({
 
             <div className="mt-auto">
                 <div className="flex items-center gap-2 text-[11px] leading-relaxed text-slate-400 group-hover/metric:text-slate-200 transition-colors">
-                    <Zap className="w-3 h-3 text-indigo-400 shrink-0" />
                     <p>{shortExplanation}</p>
                 </div>
 

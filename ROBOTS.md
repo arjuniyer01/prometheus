@@ -22,35 +22,33 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 8. **Build Safety**: Provide fallbacks for environment variables in SDK initialization files (e.g., `src/lib/supabase.ts`) to prevent build-time crashes during static analysis on Vercel.
 9. **Dynamic Routing**: Mark all background API routes as `export const dynamic = 'force-dynamic'` to prevent Next.js from attempting to statically optimize paths that rely on runtime secrets.
 10. **Inngest Production Keys**: Ensure `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` are set in Vercel. These are required for event triggers and secure communication with the Inngest Cloud.
-11. **FMP Stable API**: Prioritize the modern `/stable/` endpoints for paid users. The correct structure is `https://financialmodelingprep.com/stable/{endpoint}?symbol={symbol}&apikey={API_KEY}`. This format applies to `quote`, `profile`, `ratios`, `key-metrics`, and `historical-price-eod/full`.
-26. **Unified Market Architecture**: Avoid market-specific pages (e.g., `/india`). Use a single root `/` dashboard that dynamically adapts to the asset's `market` tag. Implement `currencySymbol` and `regulatoryLabel` helpers to switch between $ vs ₹ and SEC vs SEBI based on metadata.
-27. **IndianAPI Integration**:
-    - **Authentication**: Use `x-api-key` header, NOT query parameters.
-    - **Parameter Naming**: Use `name` for the `/stock` endpoint and `stock_name` for `/statement` and `/historical_data`.
-    - **Data Extraction**: IndianAPI often returns dual-exchange objects `{ NSE: value, BSE: value }`. Use a safe `extractValue` helper to prioritize `NSE` and prevent React "Objects are not valid as a React child" crashes.
-    - **Rate Limiting**: Strictly adhere to the **1 request/second** limit. Implement Inngest `throttle` (limit: 1, period: "1s") and explicit `step.sleep("1s")` between consecutive API calls in Indian workflows.
+11. **FMP Stable API**: **CRITICAL**: Use the `/stable/` prefix for all FMP API calls. All `/api/v3/` and `/api/v4/` paths are legacy.
+    - SEC Profile: `/stable/sec-profile?symbol={TICKER}`
+    - Performance Snapshot: `/stable/sector-performance-snapshot?date={YYYY-MM-DD}` (Defaults to last closing date if today is unavailable)
+    - Profile: `/stable/profile?symbol={TICKER}`
+    - Historical Prices: `/stable/historical-price-eod/full?symbol={TICKER}` or `/stable/historical-chart/1day/{TICKER}`
+    - Screener: `/stable/company-screener?sector={SECTOR}`
+    - **Note**: `available-sectors` is a RESTRICTED (paid) endpoint; do not use it.
+12. **IndianAPI Integration**: **CRITICAL**: Always use `x-api-key` header. Consult `indian-stock-api.json` for param names.
+    - **Stock Profile**: `/stock?name={TICKER}` (Param is `name`)
+    - **Financials**: `/statement?stock_name={TICKER}&stats={type}` (Param is `stock_name`)
+    - **Historical Prices**: `/historical_data?stock_name={TICKER}&period=1yr&filter=price`
+    - **Historical Stats**: `/historical_stats?stock_name={TICKER}&stats=ratios`
+    - **Industry Peers**: `/industry_search?query={INDUSTRY_NAME}` (Param is `query`)
+    - **Market Sentiment**: `/trending` and `/NSE_most_active` (No params)
+
+### Sector Analysis Logic
+- **FMP (US)**: Use Sector ETFs (e.g., XLK, XLF) with `/stable/historical-price-eod/full` to derive seasonality. Use `/stable/sector-performance` for real-time rotation.
+- **IndianAPI (India)**: Use sectoral indices (e.g., NIFTY IT, NIFTY BANK) with `/historical_data` for seasonality. Monitor `/trending` and `/NSE_most_active` to proxy rotation signals.
 
 ### Completed Tasks
-- [x] Institutional Monochrome UI Overhaul (Silver/Slate/Black).
-- [x] "Engineer" Monolith Branding & SVG Favicon implementation.
-- [x] Recharts integration with human-readable date tooltips.
-- [x] Functional SEC EDGAR archive linking.
-- [x] Inngest workflow for multi-source data synthesis (FMP + SEC + News).
-- [x] Market Pulse section with live headline feeds and dynamic sentiment scoring (0-100).
-- [x] Redundant News API scraper (Finnhub with FMP fallback).
-- [x] Edge-to-edge fluid layout optimization (Ultrawide & Vertical Tab support).
-- [x] API Validation suite (`npm test`) reaching 100% green status.
-- [x] Sentiment-aware UI elements (dynamic progress bars and labels).
-- [x] UI Cleanup: Removed redundant stock avatars, blinking pulse, and info icons.
-- [x] Historical Price Caching: Mandated use of Supabase for all chart data. The UI no longer falls back to internal API routes to protect rate limits; prices must be persisted during the admin generation/regeneration workflow.
-- [x] Enhanced Synthesis: Prompt engineering to include multiple SEC filings and stock-specific market pulse.
-- [x] UX Polish: Search-based navigation replaced ticker tab bars for improved scalability.
-- [x] Admin terminal (/admin) for gated stock initialization and regeneration.
-- [x] Secured "Analysis" and "Regenerate" actions by moving them to an authenticated admin route.
-- [x] Unified Market Expansion: Single dashboard architecture supporting both US and Indian markets.
-- [x] Dynamic Regional UX: Automatic currency switching ($/₹) and regulatory rebranding (SEC/SEBI) based on asset metadata.
-- [x] IndianAPI.in Integration: Standardized scrapers for NSE/BSE profile, financials, and news headlines.
-- [x] Throttled Indian Workflows: Inngest-based 1 req/s rate-limit protection for Indian data ingestion.
+- [x] Institutional Monochrome UI Overhaul.
+- [x] "Engineer" Monolith Branding & SVG Favicon.
+- [x] Search-based navigation and scalable ticker selection.
+- [x] Secured Admin Terminal (/admin) for stock generation.
+- [x] Unified US/India Market Dashboard architecture.
+- [x] **[NEW] Sector Intelligence Integration**: Added Outperformance, Seasonality, and Rotation scoring + UI.
+- [x] **[FIX] API Stability**: Migrated all FMP calls to `/stable/` and strictly validated Indian API parameters.
 
 ### Pending Tasks
 - [ ] Implement Upstox WebSocket for real-time NSE/BSE price ticks.

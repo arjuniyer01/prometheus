@@ -260,7 +260,9 @@ export default function AdminPage() {
                     <div className="w-16 h-16 bg-white/5 rounded-2xl flex items-center justify-center mb-4 border border-white/10">
                         <ShieldCheck className="w-8 h-8 text-white" />
                     </div>
-                    <h1 className="text-3xl font-bold text-white tracking-tight">Prometheus Admin</h1>
+                    <h1 className="text-3xl font-bold text-white tracking-tight">
+                        <Link href="/" className="hover:opacity-80 transition-opacity">Prometheus</Link> Admin
+                    </h1>
                     <p className="text-slate-500 text-sm mt-2">Authorization required for system overrides</p>
                 </div>
 

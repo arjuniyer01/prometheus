@@ -15,7 +15,8 @@ import {
   MessageSquare,
   Info,
   Search,
-  Sparkles
+  Sparkles,
+  FileDown
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -123,6 +124,123 @@ export default function Home() {
     }
   }, []);
 
+  const downloadReport = useCallback(() => {
+    if (!insight || !tickerData) return;
+
+    const meta = insight.metadata;
+    const isIndian = selectedSymbol?.endsWith(".NS") || selectedSymbol?.endsWith(".BO");
+    const currency = isIndian ? "₹" : "$";
+    const name = tickerData.name || selectedSymbol;
+    const date = insight.created_at ? new Date(insight.created_at).toLocaleDateString() : new Date().toLocaleDateString();
+
+    let md = `# Prometheus Intelligence Report: ${name} (${selectedSymbol})\n`;
+    md += `*Generated on ${date}*\n\n`;
+
+    md += `## Executive Summary\n${insight.summary_text || meta.executive_summary || "No summary available."}\n\n`;
+
+    if (meta.layman_analogy) {
+      md += `## The "Explain Like I'm 5" Analogy\n> ${meta.layman_analogy}\n\n`;
+    }
+
+    md += `## Market Pulse\n`;
+    md += `- **Current Price:** ${currency}${meta.price || meta.quote?.price || '---'}\n`;
+    md += `- **Change:** ${meta.changesPercentage !== undefined ? (typeof meta.changesPercentage === 'object' ? (meta.changesPercentage.NSE || meta.changesPercentage.BSE) : meta.changesPercentage) + '%' : '---'}\n`;
+    md += `- **Market Cap:** ${currency}${meta.marketCap || '---'}\n`;
+    md += `- **Volume:** ${meta.volume || '---'}\n`;
+    md += `- **Next Earnings:** ${meta.nextEarnings || '---'}\n`;
+    md += `- **Dividend Yield:** ${meta.dividendYield || '---'}\n\n`;
+
+    md += `## Prometheus Score: ${meta.prometheus_score}/100\n`;
+    md += `**Evaluation:** ${meta.score_criteria || "N/A"}\n\n`;
+
+    if (meta.score_breakdown) {
+      md += `### Score Breakdown & Sub-Weights\n`;
+      md += `- **Financial Analysis:** ${meta.score_breakdown.financial_score}/100\n`;
+      if (meta.financial_subscores) {
+        md += `  - *Profitability:* ${meta.financial_subscores.profitability}/100\n`;
+        md += `  - *Growth:* ${meta.financial_subscores.growth}/100\n`;
+        md += `  - *Solvency:* ${meta.financial_subscores.solvency}/100\n`;
+      }
+      md += `- **Regulatory/SEC Pulse:** ${meta.score_breakdown.sec_score}/100\n`;
+      md += `- **Market Sentiment:** ${meta.score_breakdown.sentiment_score}/100\n`;
+      md += `- **Momentum & Trend:** ${meta.score_breakdown.trend_score}/100\n`;
+      if (meta.trend_subscores) {
+        md += `  - *Quarterly Momentum:* ${meta.trend_subscores.quarterly_momentum}/100\n`;
+        md += `  - *Annual Stability:* ${meta.trend_subscores.annual_stability}/100\n`;
+      }
+      md += `- **Sector Relative Strength:** ${meta.score_breakdown.sector_score}/100\n`;
+      if (meta.sector_subscores) {
+        md += `  - *Outperformance vs Peers:* ${meta.sector_subscores.outperformance}/100\n`;
+        md += `  - *Seasonality Strength:* ${meta.sector_subscores.seasonality_strength}/100\n`;
+        md += `  - *Rotation Inflow:* ${meta.sector_subscores.rotation_inflow}/100\n`;
+      }
+      md += `\n`;
+    }
+
+    md += `## Key Investment Cases\n`;
+    md += `### 🟢 Bull Case\n`;
+    (insight.bull_case || []).forEach((c: string) => md += `- ${c}\n`);
+    md += `\n### 🔴 Bear Case\n`;
+    (insight.bear_case || []).forEach((c: string) => md += `- ${c}\n`);
+    md += `\n`;
+
+    md += `## Deep Analysis\n`;
+    md += `### 📊 Quarterly Performance\n${meta.quarterly_analysis || "N/A"}\n\n`;
+    md += `### 📈 5-Year Strategy & Trends\n${meta.annual_trends || "N/A"}\n\n`;
+    md += `### 🌐 Sector Intelligence\n${meta.sector_analysis || "N/A"}\n\n`;
+    md += `### ⚖️ Regulatory Synthesis\n${meta.sec_analysis || "N/A"}\n\n`;
+    md += `### 💬 News & Sentiment\n${meta.sentiment_summary || "N/A"}\n\n`;
+
+    md += `## Key Metrics Copilot\n`;
+    md += `| Metric | Value | Status | Insight |\n`;
+    md += `| :--- | :--- | :--- | :--- |\n`;
+    (insight.metrics || []).forEach((m: any) => {
+      const val = typeof m.value === 'object' ? (m.value.NSE || m.value.BSE) : m.value;
+      md += `| ${m.label} | ${val} | ${m.status?.toUpperCase()} | ${m.shortExplanation} |\n`;
+    });
+    md += `\n`;
+
+    md += `## Historical Financials\n`;
+    const formatFin = (val: number) => isIndian ? (val / 1e7).toFixed(1) + ' Cr' : (val / 1e9).toFixed(2) + 'B';
+
+    if (financials.length > 0) {
+      md += `### Annual (Last 5 Years)\n`;
+      md += `| Period | Revenue | Net Income | Assets | Liabilities |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      financials.filter(f => f.report_type === '10-K').slice(0, 5).forEach(f => {
+        md += `| ${f.period} | ${currency}${formatFin(f.income_statement?.revenue || 0)} | ${currency}${formatFin(f.income_statement?.netIncome || 0)} | ${currency}${formatFin(f.balance_sheet?.totalAssets || 0)} | ${currency}${formatFin(f.balance_sheet?.totalTotalLiabilities || 0)} |\n`;
+      });
+      md += `\n`;
+
+      md += `### Quarterly (Last 5 Periods)\n`;
+      md += `| Period | Revenue | Net Income | Assets | Liabilities |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      financials.filter(f => f.report_type === '10-Q').slice(0, 5).forEach(f => {
+        md += `| ${f.period} | ${currency}${formatFin(f.income_statement?.revenue || 0)} | ${currency}${formatFin(f.income_statement?.netIncome || 0)} | ${currency}${formatFin(f.balance_sheet?.totalAssets || 0)} | ${currency}${formatFin(f.balance_sheet?.totalTotalLiabilities || 0)} |\n`;
+      });
+    } else {
+      md += `*Historical financial data unavailable for this report.*\n`;
+    }
+    md += `\n`;
+
+    md += `---\n*Disclaimer: This report is AI-generated for research purposes only. It does not constitute financial advice. Use as a technical co-pilot, not a sole decision maker.*`;
+
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Prometheus_Report_${selectedSymbol}_${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({
+      title: "Report Generated",
+      description: `Analysis for ${selectedSymbol} downloaded as Markdown.`,
+    });
+  }, [insight, tickerData, selectedSymbol, toast]);
+
   useEffect(() => {
     fetchTickers();
     const channel = supabase
@@ -150,7 +268,7 @@ export default function Home() {
         fetchTickerDetails(selectedSymbol);
         if (payload.eventType === 'INSERT') {
           toast({
-            title: "Intelligence Ready",
+            title: "Synthesis Ready",
             description: `Synthesis complete for ${selectedSymbol}.`,
           });
         }
@@ -194,7 +312,7 @@ export default function Home() {
           <Search className="w-5 h-5 text-slate-500" />
           <input
             type="text"
-            placeholder="Search Intelligence Universe..."
+            placeholder="Search"
             className="bg-transparent border-none outline-none text-white w-full text-sm font-medium uppercase tracking-wider"
             value={searchTerm}
             onChange={(e) => {
@@ -259,12 +377,8 @@ export default function Home() {
 
             {/* LEFT COLUMN: PROMETHEUS INTELLIGENCE */}
             <div className="flex flex-col gap-6 lg:sticky lg:top-24">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <Zap className="w-4 h-4 text-slate-400" />
-                  <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300 text-glow-silver">Intelligence</h2>
-                </div>
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-end mb-2">
+                <div className="flex items-center gap-3">
                   <div className="flex flex-col items-end">
                     {insight?.created_at && (
                       <span className="text-[9px] text-slate-600 font-mono pr-1">
@@ -272,6 +386,15 @@ export default function Home() {
                       </span>
                     )}
                   </div>
+                  {insight && (
+                    <button
+                      onClick={downloadReport}
+                      className="p-1.5 rounded-lg bg-white/5 border border-white/10 text-slate-400 hover:text-white hover:bg-white/10 transition-all group"
+                      title="Download Analysis Report"
+                    >
+                      <FileDown className="w-3 h-3 group-hover:scale-110 transition-transform" />
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -575,34 +698,46 @@ export default function Home() {
 
               <GlassCard className="p-6 border-emerald-500/10 bg-emerald-500/[0.01] space-y-6">
                 <div>
-                  <h4 className="text-[10px] font-bold text-emerald-500 uppercase mb-2 tracking-wider">Quarterly Results Review</h4>
+                  <h4 className="text-[10px] font-bold text-emerald-500 uppercase mb-2 tracking-wider flex items-center gap-2">
+                    Quarterly Results Review
+                  </h4>
                   <p className="text-sm leading-relaxed text-slate-300">
                     {insight?.metadata?.quarterly_analysis || "Quarterly analysis pending deep scan..."}
                   </p>
                 </div>
                 <div className="pt-4 border-t border-white/5">
-                  <h4 className="text-[10px] font-bold text-emerald-500 uppercase mb-2 tracking-wider">5-Year Strategy Trajectory</h4>
+                  <h4 className="text-[10px] font-bold text-emerald-500 uppercase mb-2 tracking-wider flex items-center gap-2">
+                    <BarChart3 className="w-3 h-3" /> 5-Year Trajectory
+                  </h4>
                   <p className="text-sm leading-relaxed text-slate-300">
                     {insight?.metadata?.annual_trends || "Annual trend synthesis pending..."}
+                  </p>
+                </div>
+                <div className="pt-4 border-t border-white/5">
+                  <h4 className="text-[10px] font-bold text-rose-500 uppercase mb-2 tracking-wider flex items-center gap-2">
+                    Sector Analysis
+                  </h4>
+                  <p className="text-sm leading-relaxed text-slate-300">
+                    {insight?.metadata?.sector_analysis || "Sector rotation and seasonality analysis pending..."}
                   </p>
                 </div>
               </GlassCard>
 
               <div className="flex items-center gap-2 mb-2 mt-4">
                 <Plus className="w-4 h-4 text-slate-400" />
-                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300">Investor Intelligence</h2>
+                <h2 className="text-xs font-bold uppercase tracking-widest text-slate-300">Investor Resources</h2>
               </div>
               <GlassCard className="p-6 border-white/5 bg-white/[0.01]">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-3 tracking-wider">Search for Presentations & Guidance</h4>
                 <div className="grid grid-cols-2 gap-4">
                   <a
-                    href={`https://www.google.com/search?q=${selectedSymbol}+investor+presentation+filetype:pdf+OR+guidance+deck`}
+                    href={`https://www.google.com/search?q=${selectedSymbol}+investor+presentation`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex flex-col items-center justify-center p-6 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-sky-500/30 transition-all group shadow-xl"
                   >
                     <Search className="w-6 h-6 text-slate-500 group-hover:text-sky-400 mb-3 transition-all duration-300" />
-                    <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase tracking-widest transition-colors">Google</span>
+                    <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase tracking-widest transition-colors text-center">Investor Decks</span>
                   </a>
 
                   <a
@@ -612,7 +747,7 @@ export default function Home() {
                     className="flex flex-col items-center justify-center p-6 rounded-2xl bg-indigo-500/[0.03] border border-indigo-500/10 hover:bg-indigo-500/[0.08] hover:border-indigo-500/40 transition-all group shadow-xl"
                   >
                     <Sparkles className="w-6 h-6 text-indigo-500/60 group-hover:text-indigo-400 mb-3 animate-pulse" />
-                    <span className="text-[10px] font-bold text-indigo-400/80 group-hover:text-white uppercase tracking-widest transition-colors">Perplexity AI</span>
+                    <span className="text-[10px] font-bold text-indigo-400/80 group-hover:text-white uppercase tracking-widest transition-colors text-center">Strategic Synthesis</span>
                   </a>
                 </div>
               </GlassCard>

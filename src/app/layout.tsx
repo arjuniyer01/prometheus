@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Outfit } from "next/font/google";
+import Link from "next/link";
 import "./globals.css";
 import { cn } from "@/lib/utils";
 import { Toaster } from "../components/ui/toaster";
@@ -42,12 +43,12 @@ export default function RootLayout({
         {/* Navigation / Header */}
         <header className="sticky top-0 z-50 w-full border-b border-white/5 bg-slate-950/20 backdrop-blur-md">
           <div className="w-full px-4 sm:px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-3 hover:opacity-80 transition-opacity">
               <div className="relative w-10 h-10 flex items-center justify-center">
                 <img src="/engineer.svg" alt="Prometheus Logo" className="w-full h-full logo-shadow object-contain" />
               </div>
               <span className="text-xl font-bold font-outfit tracking-tight">PROMETHEUS</span>
-            </div>
+            </Link>
 
             <div className="flex items-center gap-4">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/10">In development, information may be incomplete or incorrect</span>
@@ -64,7 +65,7 @@ export default function RootLayout({
         <footer className="border-t border-white/5 py-12 bg-slate-950/50">
           <div className="w-full px-4 sm:px-6 flex flex-col md:flex-row justify-between items-center gap-8">
             <div className="text-sm text-slate-500">
-              © 2026 Prometheus Intelligence.
+              © 2026 <Link href="/" className="hover:text-white transition-colors">Prometheus Intelligence</Link>.
             </div>
             <div className="text-[10px] text-slate-600 max-w-md text-center md:text-right italic">
               AI-generated content. Not financial advice. Use as a research aid only.

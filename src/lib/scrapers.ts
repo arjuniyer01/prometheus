@@ -85,10 +85,12 @@ export async function getFinnhubFinancials(symbol: string) {
 }
 
 export async function getFMPNews(symbol: string) {
-    const url = `https://financialmodelingprep.com/api/v3/stock_news?tickers=${symbol}&limit=10&apikey=${FMP_API_KEY}`;
-    const response = await fetch(url);
-    if (!response.ok) return [];
-    return response.json();
+    try {
+        return await fetchFMP(`stock_news`, { tickers: symbol, limit: '10' });
+    } catch (error) {
+        console.error(`FMP News fetch failed for ${symbol}:`, error);
+        return [];
+    }
 }
 
 export async function getNews(symbol: string) {
@@ -107,8 +109,6 @@ export async function getNews(symbol: string) {
         const response = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=2024-01-01&to=2026-01-25&token=${FINNHUB_API_KEY}`);
         if (!response.ok) return [];
         const data = await response.json();
-        // Map Finnhub structure to match the frontend expectations if needed, 
-        // but current UI handles both via the synthesis step.
         return data;
     } catch (error) {
         console.error("News fallback failed:", error);
@@ -121,7 +121,6 @@ export async function getNews(symbol: string) {
  */
 export async function getSECSubmissions(cik: string) {
     if (!cik) return null;
-    // CIK must be 10 digits padded with zeros
     const paddedCik = cik.padStart(10, '0');
     const url = `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
 
@@ -144,23 +143,34 @@ export async function getSECSubmissions(cik: string) {
 }
 
 /**
+ * Fetch SEC Profile for a given symbol (Stable)
+ */
+export async function getSECProfile(symbol: string) {
+    try {
+        const data = await fetchFMP(`sec-profile`, { symbol });
+        return data?.[0] || null;
+    } catch (error) {
+        console.error(`SEC Profile fetch failed for ${symbol}:`, error);
+        return null;
+    }
+}
+
+/**
  * Fetch historical daily prices for the last 30 days.
  */
 export async function getFinnhubHistoricalPrices(symbol: string) {
     try {
         const to = Math.floor(Date.now() / 1000);
-        const from = to - (5 * 365 * 24 * 60 * 60); // 5 years ago for Finnhub fallback
+        const from = to - (5 * 365 * 24 * 60 * 60);
         const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`);
 
         if (!res.ok) return [];
         const data = await res.json();
 
         if (data.s !== 'ok') {
-            console.warn(`[FINNHUB] No data for ${symbol}. Status: ${data.s}`);
             return [];
         }
 
-        // Map Finnhub [t, c, o, h, l, v] arrays to FMP-style objects
         return data.t.map((timestamp: number, i: number) => ({
             date: new Date(timestamp * 1000).toISOString().split('T')[0],
             close: data.c[i],
@@ -169,7 +179,7 @@ export async function getFinnhubHistoricalPrices(symbol: string) {
             low: data.l[i],
             volume: data.v[i],
             symbol: symbol
-        })).reverse(); // Reverse to match FMP's newest-first order
+        })).reverse();
     } catch (error) {
         console.error(`Finnhub historical prices failed for ${symbol}:`, error);
         return [];
@@ -177,36 +187,26 @@ export async function getFinnhubHistoricalPrices(symbol: string) {
 }
 
 export async function getHistoricalPrices(symbol: string) {
-    // 1. Try FMP Stable (Newest, clean array format)
     try {
-        const data = await fetchFMP(`historical-price-eod/full`, {
-            symbol
-            // No limit passed to get full history
-        });
+        // User prefers historical-chart/1day for stable
+        const data = await fetchFMP(`historical-chart/1day/${symbol}`);
         if (Array.isArray(data) && data.length > 0) {
             return data;
         }
     } catch (error) {
-        console.warn(`[FMP] Stable historical unavailable for ${symbol}`);
+        console.warn(`[FMP] Stable historical-chart unavailable for ${symbol}, trying eod/full fallback`);
     }
 
-    // 2. Try FMP V3 Legacy (Different URL path and object structure)
     try {
-        const v3Url = `https://financialmodelingprep.com/api/v3/historical-price-full/${symbol}?apikey=${FMP_API_KEY}`;
-        const res = await fetch(v3Url, { cache: 'no-store' });
-        if (res.ok) {
-            const data = await res.json();
-            if (data.historical && data.historical.length > 0) {
-                console.log(`[FMP] Successfully retrieved legacy historical data for ${symbol}`);
-                return data.historical;
-            }
+        const data = await fetchFMP(`historical-price-eod/full`, { symbol });
+        if (Array.isArray(data) && data.length > 0) {
+            return data;
         }
     } catch (error) {
-        console.warn(`[FMP] Legacy V3 historical failed for ${symbol}`);
+        console.warn(`[FMP] Stable historical eod/full unavailable for ${symbol}`);
     }
 
-    // 3. Fallback to Finnhub (Last resort)
-    console.warn(`[FMP] Exhausted FMP options for ${symbol}, falling back to Finnhub`);
+    // Last resort: Finnhub
     return getFinnhubHistoricalPrices(symbol);
 }
 
@@ -228,3 +228,33 @@ export async function getBalanceSheet(symbol: string, period: 'annual' | 'quarte
     }
 }
 
+export async function getSectorPerformance() {
+    try {
+        // use today's or yesterday's date for snapshot
+        const today = new Date().toISOString().split('T')[0];
+        return await fetchFMP(`sector-performance-snapshot`, { date: today });
+    } catch (error) {
+        console.warn("Sector performance snapshot failed for today, trying a few days ago...");
+        // Fallback to a fixed relative date to ensure stability
+        const date = new Date();
+        date.setDate(date.getDate() - 3); // 3 days ago should have data
+        const fallbackDate = date.toISOString().split('T')[0];
+        try {
+            return await fetchFMP(`sector-performance-snapshot`, { date: fallbackDate });
+        } catch (e) {
+            console.error("Sector performance fetch failed completely:", e);
+            return [];
+        }
+    }
+}
+
+export async function getHistoricalSectorPerformance(limit: number = 30) {
+    try {
+        // User reports /v3/ is legacy, but /stable/historical-sectors-performance might be 404
+        // We will try stable first as requested.
+        return await fetchFMP(`historical-sectors-performance`, { limit: limit.toString() });
+    } catch (error) {
+        console.warn("Historical sector performance stable failed, no fallback available for this specific path.");
+        return [];
+    }
+}

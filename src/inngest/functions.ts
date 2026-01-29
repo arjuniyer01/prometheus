@@ -10,7 +10,11 @@ import {
     getFinnhubFinancials,
     getIncomeStatement,
     getBalanceSheet,
-    getQuote
+    getQuote,
+    getSectorPerformance,
+    getHistoricalSectorPerformance,
+    getSECProfile,
+    fetchFMP
 } from "@/lib/scrapers";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
@@ -92,8 +96,14 @@ export const analyzeTicker = inngest.createFunction(
 
         const secData = await step.run("fetch-sec-data", async () => {
             console.log(`Fetching SEC data for ${ticker} (CIK: ${data.profile.cik})...`);
-            const sec = await getSECSubmissions(data.profile.cik);
-            return sec && 'recent' in sec ? sec : null;
+            const [sec, profile] = await Promise.all([
+                getSECSubmissions(data.profile.cik),
+                getSECProfile(ticker)
+            ]);
+            return {
+                submissions: sec && 'recent' in sec ? sec : null,
+                profile
+            };
         });
 
         const newsData = await step.run("fetch-news", async () => {
@@ -101,27 +111,46 @@ export const analyzeTicker = inngest.createFunction(
             return await getNews(ticker);
         });
 
+        const sectorData = await step.run("fetch-sector-performance", async () => {
+            console.log(`Fetching Sector Performance for ${ticker}...`);
+            const [current, historical, sectorETFHistory] = await Promise.all([
+                getSectorPerformance(),
+                getHistoricalSectorPerformance(90), // 90 days for trend/rotation
+                getSectorETFHistory(data.profile.sector)
+            ]);
+            return { current, historical, sectorETFHistory };
+        });
+
         await step.run("update-status-analyzing", async () => {
             await supabase.from('tickers').update({ sync_status: 'ANALYZING', sync_percent: 60 }).eq('symbol', ticker);
         });
 
+        const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
         const aiAnalysis = await step.run("generate-ai-insights", async () => {
             console.log(`Generating Gemini insights for ${ticker}...`);
-            const hasSEC = secData && typeof secData === 'object' && 'recent' in secData;
-            const sec = secData as any;
 
             const prompt = `
         Analyze the following financial, regulatory, and news data for ${ticker} and act as a "Technical Copilot" for a retail investor.
         
+        CURRENT DATE: ${today}
+
         CRITICAL INSTRUCTIONS:
         1. SEC SYNTHESIS: You MUST synthesize the last 5 filings provided. Do not just look at the most recent one.
         2. QUARTERLY ANALYSIS: Analyze the last 5 quarterly income statements. Look for acceleration or deceleration in revenue, margin trends, and expense control.
         3. ANNUAL TRENDS: Summarize the 5-year trajectory of the P&L and Balance Sheet.
         4. MARKET PULSE: Provide a highly specific analysis of the news headlines.
+        5. SECTOR INTELLIGENCE: 
+           - Compare the stock's performance to its sector: ${data.profile.sector}.
+           - Analyze sector seasonality (e.g., is this sector historically strong or weak this time of year?). Use ${today} to determine the current season.
+           - Identify sector rotation signals (is capital moving into or out of ${data.profile.sector}?).
+        
+        6. OPINIONATED ANALYSIS: Do not be overly cautious. Act like a hedge fund analyst. If a metric is strong compared to peers or history, mark it "positive". If it's a risk, mark it "negative". Avoid "neutral" unless it's truly unremarkable.
+        7. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the sectorData snapshots, provide a representative score (0-100).
         
         DATA:
         Profile: ${JSON.stringify(data.profile)}
         Quote (Real-time): ${JSON.stringify(data.quote)}
+        Sector Data: ${JSON.stringify(sectorData)}
         Key Metrics (FMP): ${JSON.stringify(data.metrics)}
         Ratios (FMP): ${JSON.stringify(data.ratios)}
         Basic Financials (Finnhub Fallback): ${JSON.stringify(data.finnhubMetrics)}
@@ -129,11 +158,12 @@ export const analyzeTicker = inngest.createFunction(
         Annual Balance Sheet (5yr): ${JSON.stringify(data.annualBalance)}
         Quarterly Income (Last 5): ${JSON.stringify(data.quarterlyIncome)}
         Quarterly Balance Sheet (Last 5): ${JSON.stringify(data.quarterlyBalance)}
-        SEC Filings: ${hasSEC ? JSON.stringify({
-                recent_forms: sec.recent.form.slice(0, 8),
-                recent_dates: sec.recent.filingDate.slice(0, 8),
-                recent_descriptions: sec.recent.primaryDocDescription.slice(0, 8)
-            }) : "No SEC data available"}
+        SEC Profile (FMP): ${JSON.stringify(secData.profile)}
+        SEC Filings (Recent): ${secData.submissions ? JSON.stringify({
+                recent_forms: (secData.submissions as any).recent.form.slice(0, 8),
+                recent_dates: (secData.submissions as any).recent.filingDate.slice(0, 8),
+                recent_descriptions: (secData.submissions as any).recent.primaryDocDescription.slice(0, 8)
+            }) : "No SEC filing data available"}
         News Headlines: ${JSON.stringify((newsData || []).slice(0, 10).map((n: any) => ({ headline: n.headline, source: n.source })))}
         
         Output as JSON with:
@@ -142,35 +172,30 @@ export const analyzeTicker = inngest.createFunction(
         - sec_analysis: A 2-sentence synthesis of filings.
         - quarterly_analysis: A 3-sentence deep dive into the last 5 quarters of performance.
         - annual_trends: A 3-sentence summary of the 5-year financial trajectory.
+        - sector_analysis: A 3-sentence analysis of performance vs sector, seasonality, and rotation. (CRITICAL: Do not put this in the metrics array).
         - sentiment_summary: A 2-sentence synthesis of headlines.
         - sentiment_score: 0-100
-        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score }
+        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score }
         - financial_subscores: { profitability, growth, solvency }
         - trend_subscores: { 
-            quarterly_momentum: 0-100 (based on revenue/margin acceleration in last 5 quarters), 
-            annual_stability: 0-100 (based on 5-year consistency and balance sheet health) 
+            quarterly_momentum: 0-100, 
+            annual_stability: 0-100 
           }
-        - financial_formula: string
-        - financial_score_drivers: Array of top 5 specific metrics (e.g., "High Operating Margin") driving the score. 
-          { label: string, impact: "positive" | "negative", weight: "high" | "low" }
-        - prometheus_score: (0.35 * financial_score) + (0.25 * sec_score) + (0.2 * sentiment_score) + (0.2 * trend_score)
-        - score_criteria: explanation of how trends influenced the final score.
-        - metrics: array of 15-20 key financial metrics covering ALL major categories:
-             1. Valuation (EPS, P/E, PEG, Price/Book, Price/Sales, EV/EBITDA)
-             2. Profitability (Gross Margin, Operating Margin, Net Margin, ROE, ROA)
-             3. Financial Strength (Current Ratio, Quick Ratio, Debt/Equity, Interest Coverage)
-             4. Efficiency (Asset Turnover, Inventory Turnover)
-             5. Growth (Revenue Growth, EPS Growth)
-          Ensure you pick the most relevant ones.
-          { 
-            label: string, 
-            value: string, 
-            status: "positive" | "negative" | "neutral", 
-            shortExplanation: "A 1-sentence explanation of why this value is good/bad for this specific company", 
-            technicalDefinition: "A simple but accurate technical definition of the metric"
+        - sector_subscores: {
+            outperformance: 0-100 (vs sector),
+            seasonality_strength: 0-100,
+            rotation_inflow: 0-100
           }
+        - financial_formula: A short string explaining the weighted score formula.
+        - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
+        - prometheus_score: (0.3 * financial_score) + (0.2 * sec_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.2 * sector_score)
+        - score_criteria: A short explanation of why the company got this score.
+        - metrics: An array of 15-20 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. These MUST be financial or technical metrics (e.g. PER, D/E, RSI, Margin). DO NOT put sector analysis here. Be opinionated with the status based on performance vs history and peers.
         - bull_case: array of strings
         - bear_case: array of strings
+
+        IMPORTANT: Ensure all string values are valid JSON (escape double quotes if they appear inside the analysis).
+        Return ONLY valid JSON.
         `;
 
             return await generateStructuredAnalysis(prompt);
@@ -258,16 +283,18 @@ export const analyzeTicker = inngest.createFunction(
                     sec_analysis: aiAnalysis.sec_analysis,
                     quarterly_analysis: aiAnalysis.quarterly_analysis,
                     annual_trends: aiAnalysis.annual_trends,
+                    sector_analysis: aiAnalysis.sector_analysis,
                     sentiment_summary: aiAnalysis.sentiment_summary,
                     sentiment_score: aiAnalysis.sentiment_score || 50,
                     prometheus_score: aiAnalysis.prometheus_score || 0,
-                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0 },
+                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0 },
                     financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
                     trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 },
-                    financial_formula: aiAnalysis.financial_formula || "Aggregated from weighted metrics",
+                    sector_subscores: aiAnalysis.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 },
+                    financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, regulatory risk, market sentiment, momentum, and sector intelligence",
                     financial_score_drivers: aiAnalysis.financial_score_drivers || [],
                     score_criteria: aiAnalysis.score_criteria || "Score pending analysis depth.",
-                    last_sec_filing: (secData as any)?.recent?.form?.[0] || 'N/A',
+                    last_sec_filing: (secData.submissions as any)?.recent?.form?.[0] || 'N/A',
                     top_headlines: (newsData || []).slice(0, 3).map((n: any) => ({
                         headline: n.headline,
                         url: n.url,
@@ -288,6 +315,31 @@ export const analyzeTicker = inngest.createFunction(
     }
 );
 
+
+async function getSectorETFHistory(sector: string) {
+    const mapping: Record<string, string> = {
+        'Technology': 'XLK',
+        'Financial Services': 'XLF',
+        'Healthcare': 'XLV',
+        'Consumer Cyclical': 'XLY',
+        'Communication Services': 'XLC',
+        'Industrials': 'XLI',
+        'Consumer Defensive': 'XLP',
+        'Energy': 'XLE',
+        'Utilities': 'XLU',
+        'Real Estate': 'XLRE',
+        'Basic Materials': 'XLB'
+    };
+    const etf = mapping[sector];
+    if (!etf) return null;
+    try {
+        // Fetch 2 years of history for seasonality analysis
+        const data = await fetchFMP(`historical-price-eod/full`, { symbol: etf });
+        return data?.slice(0, 500) || null;
+    } catch (e) {
+        return null;
+    }
+}
 
 export * from "./functions-india";
 
