@@ -8,7 +8,11 @@ import {
     getHistoricalPricesIndia,
     getTrendingIndia,
     getNSEMostActiveIndia,
-    searchIndustryIndia
+    searchIndustryIndia,
+    getHistoricalStatsIndia,
+    getStockForecastsIndia,
+    getStockTargetPriceIndia,
+    getRecentAnnouncementsIndia
 } from "@/lib/scrapers-india";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
@@ -45,7 +49,10 @@ function pivotFinancials(data: any): any[] {
         'TotalLiab': 'totalTotalLiabilities',
         'Equity Capital': 'commonStock',
         'EquityCapital': 'commonStock',
-        'Reserves': 'retainedEarnings'
+        'Reserves': 'retainedEarnings',
+        'Earnings Per Share': 'eps',
+        'EPS': 'eps',
+        'Diluted EPS': 'eps'
     };
 
     const results = Array.from(periods).map(period => {
@@ -117,7 +124,11 @@ function transformRowFinancials(stockFinancialObj: any): any {
         'Reserves': 'retainedEarnings',
         'Depreciation/ Amortization': 'depreciationAndAmortization',
         'DepreciationAmortization': 'depreciationAndAmortization',
-        'Interest Inc( Exp) Net- Non- Op Total': 'interestExpense'
+        'Interest Inc( Exp) Net- Non- Op Total': 'interestExpense',
+        'Earnings Per Share': 'eps',
+        'EPS': 'eps',
+        'Diluted EPS': 'eps',
+        'Dividend Yield': 'dividendYield'
     };
 
     const maps = stockFinancialObj.stockFinancialMap;
@@ -214,11 +225,18 @@ export const analyzeTickerIndia = inngest.createFunction(
             return { trending, mostActive, peers, indexHistory };
         });
 
+        const [ratios, forecasts, targets, announcements] = await Promise.all([
+            getHistoricalStatsIndia(ticker, 'ratios'),
+            getStockForecastsIndia(ticker, 'EPS'),
+            getStockTargetPriceIndia(ticker),
+            getRecentAnnouncementsIndia(ticker)
+        ]);
+
         await step.run("update-status-analyzing", async () => {
             await supabase.from('tickers').update({ sync_status: 'ANALYZING', sync_percent: 60 }).eq('symbol', ticker);
         });
 
-        const data = { profile, financials, corporateActions, historicalPrices, news, sectorData };
+        const data = { profile, financials, corporateActions, historicalPrices, news, sectorData, ratios, forecasts, targets, announcements };
 
 
         const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -246,6 +264,10 @@ export const analyzeTickerIndia = inngest.createFunction(
         DATA:
         Profile: ${JSON.stringify(data.profile)}
         Financials: ${JSON.stringify(data.financials)}
+        Ratios: ${JSON.stringify(data.ratios)}
+        Forecasts: ${JSON.stringify(data.forecasts)}
+        Target Price: ${JSON.stringify(data.targets)}
+        Recent Announcements: ${JSON.stringify(data.announcements)}
         Corporate Actions: ${JSON.stringify(data.corporateActions)}
         Sector Intelligence (Market Momentum): ${JSON.stringify(data.sectorData)}
         News Headlines: ${JSON.stringify((data.news || []).slice(0, 15).map((n: any) => ({ headline: n.title, source: n.source, snippet: n.snippet })))}
@@ -274,7 +296,10 @@ export const analyzeTickerIndia = inngest.createFunction(
         - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
         - prometheus_score: (0.3 * financial_score) + (0.2 * sec_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.2 * sector_score)
         - score_criteria: A short explanation of why the company got this score.
-        - metrics: An array of 15-20 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. These MUST be financial or technical metrics (e.g. PER, D/E, RSI, Margin). DO NOT put sector analysis here. Use Crores/Lakhs for values where appropriate. Be opinionated with the status based on performance vs history and peers.
+        - metrics: An array of 25-30 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. 
+          REQUIRED METRICS (Exhaustive List): 
+          1. Current Price, 2. Market Cap, 3. 52-Week High, 4. 52-Week Low, 5. Revenue (TTM & Recent Fiscal), 6. Net Income (TTM & Recent Fiscal), 7. EPS (TTM & Recent Fiscal), 8. Forecasted Revenue (FY25/Next), 9. Forecasted Net Income (FY25/Next), 10. P/E Ratio (TTM), 11. Price to Sales (TTM), 12. Price to Book, 13. Dividend Yield, 14. Return on Equity (ROE) & ROI, 15. Revenue Growth (TTM & 5-Year CAGR), 16. Current Ratio, 17. Quick Ratio, 18. Debt to Equity, 19. LT Debt to Equity, 20. Interest Coverage Ratio, 21. Cash & Short Term Investments, 22. Operating Profit Margin, 23. Net Profit Margin, 24. FII/Institutional Shareholding, 25. Mutual Fund Shareholding, 26. 50-Day Moving Average, 27. 200-Day Moving Average, 28. Latest Quarterly Revenue, 29. Latest Quarterly Net Profit, 30. Latest Quarterly EPS, 31. Analyst Rating, 32. Price Performance (52-Week), 33. Risk Category.
+          DO NOT put sector analysis here. Use Crores/Lakhs for values where appropriate. Be opinionated with the status based on performance vs history and peers.
         - bull_case: array of strings
         - bear_case: array of strings
 
@@ -382,6 +407,11 @@ export const analyzeTickerIndia = inngest.createFunction(
 
                 metadata: {
                     price: data.profile.price,
+                    changes: data.profile.changes,
+                    changesPercentage: data.profile.changesPercentage,
+                    marketCap: data.profile.mktCap,
+                    volume: data.profile.raw?.volume || '---',
+                    dividendYield: data.profile.raw?.dividendYield || '---',
                     currency: 'INR',
                     analogy: aiAnalysis.layman_analogy || "Synthesis pending...",
                     sec_analysis: aiAnalysis.sec_analysis || "Regulatory pulse update in progress...",

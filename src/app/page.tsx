@@ -128,9 +128,9 @@ export default function Home() {
     if (!insight || !tickerData) return;
 
     const meta = insight.metadata;
-    const isIndian = selectedSymbol?.endsWith(".NS") || selectedSymbol?.endsWith(".BO");
-    const currency = isIndian ? "₹" : "$";
-    const name = tickerData.name || selectedSymbol;
+    const isIndianStock = meta?.currency === 'INR' || tickerData?.market === 'INDIA' || selectedSymbol?.endsWith(".NS") || selectedSymbol?.endsWith(".BO");
+    const currency = isIndianStock ? "₹" : "$";
+    const name = tickerData.company_name || tickerData.name || selectedSymbol;
     const date = insight.created_at ? new Date(insight.created_at).toLocaleDateString() : new Date().toLocaleDateString();
 
     let md = `# Prometheus Intelligence Report: ${name} (${selectedSymbol})\n`;
@@ -143,9 +143,12 @@ export default function Home() {
     }
 
     md += `## Market Pulse\n`;
-    md += `- **Current Price:** ${currency}${meta.price || meta.quote?.price || '---'}\n`;
+    const formatPrice = (val: any) => typeof val === 'number' ? (isIndianStock ? val.toFixed(2) : val.toFixed(2)) : val;
+    const formatMktCap = (val: any) => typeof val === 'number' ? formatFin(val) : val;
+
+    md += `- **Current Price:** ${currency}${formatPrice(meta.price || meta.quote?.price || '---')}\n`;
     md += `- **Change:** ${meta.changesPercentage !== undefined ? (typeof meta.changesPercentage === 'object' ? (meta.changesPercentage.NSE || meta.changesPercentage.BSE) : meta.changesPercentage) + '%' : '---'}\n`;
-    md += `- **Market Cap:** ${currency}${meta.marketCap || '---'}\n`;
+    md += `- **Market Cap:** ${currency}${formatMktCap(meta.marketCap || '---')}\n`;
     md += `- **Volume:** ${meta.volume || '---'}\n`;
     md += `- **Next Earnings:** ${meta.nextEarnings || '---'}\n`;
     md += `- **Dividend Yield:** ${meta.dividendYield || '---'}\n\n`;
@@ -168,7 +171,7 @@ export default function Home() {
         md += `  - *Quarterly Momentum:* ${meta.trend_subscores.quarterly_momentum}/100\n`;
         md += `  - *Annual Stability:* ${meta.trend_subscores.annual_stability}/100\n`;
       }
-      md += `- **Sector Relative Strength:** ${meta.score_breakdown.sector_score}/100\n`;
+      md += `- **Sector Relative Strength:** ${meta.score_breakdown.sector_score || 0}/100\n`;
       if (meta.sector_subscores) {
         md += `  - *Outperformance vs Peers:* ${meta.sector_subscores.outperformance}/100\n`;
         md += `  - *Seasonality Strength:* ${meta.sector_subscores.seasonality_strength}/100\n`;
@@ -201,22 +204,37 @@ export default function Home() {
     md += `\n`;
 
     md += `## Historical Financials\n`;
-    const formatFin = (val: number) => isIndian ? (val / 1e7).toFixed(1) + ' Cr' : (val / 1e9).toFixed(2) + 'B';
+    const formatFin = (val: number) => isIndianStock ? (val / 1e7).toFixed(1) + ' Cr' : (val / 1e9).toFixed(2) + 'B';
+    const formatPercent = (val: number) => (val * 100).toFixed(1) + '%';
 
     if (financials.length > 0) {
       md += `### Annual (Last 5 Years)\n`;
-      md += `| Period | Revenue | Net Income | Assets | Liabilities |\n`;
-      md += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      md += `| Period | Revenue | Net Income | Gross Margin | Net Margin | EPS | Assets | Liabilities |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       financials.filter(f => f.report_type === '10-K').slice(0, 5).forEach(f => {
-        md += `| ${f.period} | ${currency}${formatFin(f.income_statement?.revenue || 0)} | ${currency}${formatFin(f.income_statement?.netIncome || 0)} | ${currency}${formatFin(f.balance_sheet?.totalAssets || 0)} | ${currency}${formatFin(f.balance_sheet?.totalTotalLiabilities || 0)} |\n`;
+        const rev = f.income_statement?.revenue || 0;
+        const ni = f.income_statement?.netIncome || 0;
+        const gp = f.income_statement?.grossProfit || 0;
+        const gm = rev > 0 ? formatPercent(gp / rev) : '---';
+        const nm = rev > 0 ? formatPercent(ni / rev) : '---';
+        const eps = f.income_statement?.eps || f.income_statement?.earningsPerShare || '---';
+
+        md += `| ${f.period} | ${currency}${formatFin(rev)} | ${currency}${formatFin(ni)} | ${gm} | ${nm} | ${eps} | ${currency}${formatFin(f.balance_sheet?.totalAssets || 0)} | ${currency}${formatFin(f.balance_sheet?.totalTotalLiabilities || 0)} |\n`;
       });
       md += `\n`;
 
       md += `### Quarterly (Last 5 Periods)\n`;
-      md += `| Period | Revenue | Net Income | Assets | Liabilities |\n`;
-      md += `| :--- | :--- | :--- | :--- | :--- |\n`;
+      md += `| Period | Revenue | Net Income | Gross Margin | Net Margin | EPS | Assets | Liabilities |\n`;
+      md += `| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |\n`;
       financials.filter(f => f.report_type === '10-Q').slice(0, 5).forEach(f => {
-        md += `| ${f.period} | ${currency}${formatFin(f.income_statement?.revenue || 0)} | ${currency}${formatFin(f.income_statement?.netIncome || 0)} | ${currency}${formatFin(f.balance_sheet?.totalAssets || 0)} | ${currency}${formatFin(f.balance_sheet?.totalTotalLiabilities || 0)} |\n`;
+        const rev = f.income_statement?.revenue || 0;
+        const ni = f.income_statement?.netIncome || 0;
+        const gp = f.income_statement?.grossProfit || 0;
+        const gm = rev > 0 ? formatPercent(gp / rev) : '---';
+        const nm = rev > 0 ? formatPercent(ni / rev) : '---';
+        const eps = f.income_statement?.eps || f.income_statement?.earningsPerShare || '---';
+
+        md += `| ${f.period} | ${currency}${formatFin(rev)} | ${currency}${formatFin(ni)} | ${gm} | ${nm} | ${eps} | ${currency}${formatFin(f.balance_sheet?.totalAssets || 0)} | ${currency}${formatFin(f.balance_sheet?.totalTotalLiabilities || 0)} |\n`;
       });
     } else {
       md += `*Historical financial data unavailable for this report.*\n`;

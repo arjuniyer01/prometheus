@@ -29,6 +29,8 @@ Prometheus is a high-performance financial intelligence platform designed to dem
     - Historical Prices: `/stable/historical-price-eod/full?symbol={TICKER}` or `/stable/historical-chart/1day/{TICKER}`
     - Screener: `/stable/company-screener?sector={SECTOR}`
     - **Note**: `available-sectors` is a RESTRICTED (paid) endpoint; do not use it.
+    - **Analyst Intelligence**: `/stable/analyst-stock-recommendations?symbol={TICKER}`
+    - **Technical Indicators**: `/stable/technical_indicator/daily/{TICKER}?period=50&type=sma`
 12. **IndianAPI Integration**: **CRITICAL**: Always use `x-api-key` header. Consult `indian-stock-api.json` for param names.
     - **Stock Profile**: `/stock?name={TICKER}` (Param is `name`)
     - **Financials**: `/statement?stock_name={TICKER}&stats={type}` (Param is `stock_name`)
@@ -36,6 +38,12 @@ Prometheus is a high-performance financial intelligence platform designed to dem
     - **Historical Stats**: `/historical_stats?stock_name={TICKER}&stats=ratios`
     - **Industry Peers**: `/industry_search?query={INDUSTRY_NAME}` (Param is `query`)
     - **Market Sentiment**: `/trending` and `/NSE_most_active` (No params)
+    - **Analyst Intelligence**: `/stock_forecasts` and `/stock_target_price`
+    - **Corporate Pulse**: `/recent_announcements`
+13. **Metric Consistency**: **CRITICAL**: Reports must display an exhaustive set of 33 core metrics (Forecasts, FII/DII holdings, Moving Averages, Analyst Ratings, and Margins) for all stocks. 
+    - **Historical Parity**: Both US and Indian financial tables MUST include Gross Margin, Net Margin, and EPS columns.
+    - **Data Surface**: AI prompts must request 25-30 metrics to ensure parity between US and Indian reports.
+14. **Scraper Validation**: All new data streams must be verified against real data using `src/__tests__/verification.test.ts` before being enabled in production workflows to ensure consistency across markets.
 
 ### Sector Analysis Logic
 - **FMP (US)**: Use Sector ETFs (e.g., XLK, XLF) with `/stable/historical-price-eod/full` to derive seasonality. Use `/stable/sector-performance` for real-time rotation.
@@ -49,6 +57,7 @@ Prometheus is a high-performance financial intelligence platform designed to dem
 - [x] Unified US/India Market Dashboard architecture.
 - [x] **[NEW] Sector Intelligence Integration**: Added Outperformance, Seasonality, and Rotation scoring + UI.
 - [x] **[FIX] API Stability**: Migrated all FMP calls to `/stable/` and strictly validated Indian API parameters.
+- [x] **[FIX] Metric Consistency**: Standardized reporting metrics across US/Indian stocks and enhanced historical financial tables with Margins and EPS.
 
 ### Pending Tasks
 - [ ] Implement Upstox WebSocket for real-time NSE/BSE price ticks.

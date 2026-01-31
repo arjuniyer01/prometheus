@@ -249,3 +249,34 @@ export async function getHistoricalStatsIndia(symbol: string, stats: string = 'r
         return null;
     }
 }
+
+export async function getStockForecastsIndia(symbol: string, measure: string = 'EPS') {
+    try {
+        // measure_code: EPS, SALES, ROE, etc.
+        return await fetchIndianAPI('stock_forecasts', {
+            stock_id: symbol,
+            measure_code: measure,
+            period_type: 'Annual',
+            data_type: 'Estimates',
+            age: 'Current'
+        });
+    } catch (error) {
+        return null;
+    }
+}
+
+export async function getStockTargetPriceIndia(symbol: string) {
+    try {
+        return await fetchIndianAPI('stock_target_price', { stock_id: symbol });
+    } catch (error) {
+        return null;
+    }
+}
+
+export async function getRecentAnnouncementsIndia(symbol: string) {
+    try {
+        return await fetchIndianAPI('recent_announcements', { stock_name: symbol });
+    } catch (error) {
+        return null;
+    }
+}

@@ -258,3 +258,20 @@ export async function getHistoricalSectorPerformance(limit: number = 30) {
         return [];
     }
 }
+
+export async function getAnalystRecommendations(symbol: string) {
+    try {
+        return await fetchFMP(`analyst-stock-recommendations`, { symbol });
+    } catch (error) {
+        return [];
+    }
+}
+
+export async function getTechnicalSMA(symbol: string, period: number = 50) {
+    try {
+        // Technically this might be in /v3/ but let's try stable first
+        return await fetchFMP(`technical_indicator/daily/${symbol}`, { period: period.toString(), type: 'sma' });
+    } catch (error) {
+        return [];
+    }
+}
