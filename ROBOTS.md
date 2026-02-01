@@ -59,9 +59,39 @@ We have standardized on Yahoo Finance to support global markets (US & India) wit
         *   `earningsTrend` (Growth estimates).
         *   `insiderTransactions` (Management faith).
         *   `recommendationTrend` (Analyst buy/sell ratings).
-*   **Testing**: ALWAYS run `npm run test:yahoo` after touching `functions.ts` or `scrapers.ts`. This script validates specific tickers to ensure no regression in data shape.
+        *   `majorHoldersBreakdown` (Ownership structure - Critical for midcaps).
+        *   `secFilings` (US Regulatory data).
+    *   **Validation & Error Handling Protocol**:
+        *   Yahoo's strict validation often fails on complex objects like `secFilings` (e.g., unknown filing types '8-K12B').
+        *   **CRITICAL**: Always use `{ validate: false }` in config.
+        *   **CRITICAL**: When fetching individual modules, wrap in try/catch and check `error.result`. The library often returns the valid data *inside* the error object even if validation fails.
+            ```typescript
+            try { 
+                await yahoo.quoteSummary(...); 
+            } catch (e) { 
+                if (e.result) return e.result; // Use the "failed" data
+            }
+            ```
 
-#### C. High-Fidelity Charting Engine (Recharts Deep Dive)
+#### E. Handling Global Market Nuances (India/International)
+Stocks outside the US (specifically India/NSE) operate differently. The system must adapt dynamically:
+
+1.  **Ticker Identity & Suffixing (The "Duplicate" Trap)**:
+    *   **Database**: Store the ticker **EXACTLY** as the user enters it (e.g., `63MOONS`, `RELIANCE`).
+    *   **Frontend**: Do **NOT** auto-append `.NS` or `.BO` in the `admin/page.tsx` or `functions-india.ts`. This causes database duplication (`TICKER` vs `TICKER.NS`).
+    *   **Scrapers**: Only append `.NS` at the *last mile* when calling the Yahoo Finance API.
+    *   **UI**: Detect Indian stocks via `market === 'INDIA'` or `currency === 'INR'`, not just by checking for a dot suffix.
+
+2.  **Regulatory & Institutional Data Fallbacks**:
+    *   **SEC Filings**: Do NOT exist for Indian stocks. Do not query or display standard SEC components.
+    *   **Insider Pulse Fallback**: Indian mid-caps often lack `insiderTransactions`. Fallback to **NSE/BSE Corporate Actions** (Announcements) to show regulatory activity.
+    *   **Analyst Coverage Fallback**: If specific Buy/Sell ratings are missing, fallback to **Shareholding Patterns** (Promoters vs Institutions vs Public). High insider ownership (>50%) is a strong signal in India.
+
+3.  **CIK & Identity (US Specific)**:
+    *   Use **CIK** (Central Index Key) for robust SEC linking.
+    *   If `profile.cik` is missing (common for recent IPOs or SPACs like 'TE'), extract it from the **Edgar URL** in `secFilings` (e.g., `.../data/0001992243/...`). Persist this CIK to Supabase metadata.
+
+#### F. High-Fidelity Charting Engine (Recharts Deep Dive)
 We use a highly customized implementation of Recharts to achieve financial-grade visualization.
 1.  **The "DataRange" Pattern**:
     *   Recharts `Bar` component expects a single value.
@@ -77,7 +107,7 @@ We use a highly customized implementation of Recharts to achieve financial-grade
     *   **Tooltips**: Use 3-decimal precision (`.toFixed(3)`) for all tooltip metrics.
     *   **Controls**: dedicated "Chart Analysis" button for expanding the view; do not use hover-overlay icons.
 
-#### D. News & Sentiment Aggregation
+#### G. News & Sentiment Aggregation
 We do not rely on standard API news endpoints (often delayed or limited).
 *   **Dual-Pipe RSS**: We aggregate RSS feeds from:
     1.  **Google News**: `https://news.google.com/rss/search?q=ticker:{SYMBOL}` (High relevance).
@@ -97,12 +127,13 @@ We do not rely on standard API news endpoints (often delayed or limited).
 #### ✅ Completed & Stable
 *   **Unified US/India Backend**: Seamless searching for `AAPL` or `TATASTEEL.NS`.
 *   **Live Charting**: Real-time price updates (polling) with Candlestick/Area toggles.
-    *   *Fix*: Auto-appends `.NS` suffix for Indian stocks in both the admin panel and dashboard fetchers to ensure Yahoo Finance compatibility.
 *   **Prometheus Score Intelligence**: 
-    *   *Fix*: Resolved `NaN` score display for Indian stocks by implementing `0` fallback for missing US-specific metrics (like SEC/Regulatory scores) during recalculation.
-    *   *UI Fix*: Enhanced tooltip contrast by explicitly setting light text colors against dark backgrounds for subscore breakdowns.
+    *   *Fix*: Resolved `NaN` score display for Indian stocks by implementing `0` fallback for mixing US-specific metrics.
+    *   *Fix*: UI now explicitly highlights "Data Unavailable" states rather than showing broken components.
 *   **RSS News Engine**: Zero-latency news feed.
-*   **Institutional Intelligence**: Integration of "Insider Trades" and "Analyst Ratings" into the AI synthesis.
+*   **Institutional Intelligence**: 
+    *   Adaptive layout that prioritizes **Ownership Structure** for mid-caps.
+    *   Fallback to **Regulatory Pulse** (Corporate Actions) when insider trades are missing.
 *   **Zoom/Pan Charts**: Fully interactive historical data navigation.
 
 #### 🚧 In Progress / Roadmap
@@ -113,9 +144,10 @@ We do not rely on standard API news endpoints (often delayed or limited).
 
 ### 6. Troubleshooting
 *   **"Red Dot on Chart"**: This means the `Candle` component is receiving undefined `y` or `height` props. Ensure `dataKey="bodyRange"` is set on the generic `Bar` component logic in `page.tsx`.
-*   **"Missing Live Chart for Indian Stocks"**: Ensure the symbol has the `.NS` suffix in the database. The system now auto-normalizes this, but check legacy entries if they fail.
+*   **"Missing Live Chart for Indian Stocks"**: Check if `market === 'INDIA'`. The UI handles adding the `.NS` suffix for the *link* to Yahoo, but the internal symbol lookup might need the raw ID.
 *   **"Synthesizing Forever"**: Check the Supabase `realtime` inspector. If Inngest fails silently, the UI may not receive the `completed` state. Check Vercel logs for timeout errors (Gemini taking >60s).
-*   **"Missing Data columns"**: Verify `scripts/test-yahoo.ts`. Yahoo often changes the object structure of `financialData`.
+*   **"Missing Data columns"**: Verify `scripts/test-yahoo.ts`. Yahoo often changes the object structure of `financialData` or `secFilings`.
+*   **"Duplicate Tickers (e.g. 63MOONS vs 63MOONS.NS)"**: You likely used a version of the admin panel that auto-suffixed the ticker. Run `scripts/cleanup-duplicates.ts` (if available) or manually delete the `.NS` variant from Supabase.
 
 ---
-*Last Updated: Feb 01, 2026 - System Version 2.2 (The "Indian Normalization" Fix)*
+*Last Updated: Feb 01, 2026 - System Version 2.3 (The "Global Identity & Fallback" Update)*
