@@ -148,6 +148,7 @@ We do not rely on standard API news endpoints (often delayed or limited).
 *   **"Synthesizing Forever"**: Check the Supabase `realtime` inspector. If Inngest fails silently, the UI may not receive the `completed` state. Check Vercel logs for timeout errors (Gemini taking >60s).
 *   **"Missing Data columns"**: Verify `scripts/test-yahoo.ts`. Yahoo often changes the object structure of `financialData` or `secFilings`.
 *   **"Duplicate Tickers (e.g. 63MOONS vs 63MOONS.NS)"**: You likely used a version of the admin panel that auto-suffixed the ticker. Run `scripts/cleanup-duplicates.ts` (if available) or manually delete the `.NS` variant from Supabase.
+*   **"ReferenceError: Cannot access 'X' before initialization"**: In large `useCallback` hooks (like `downloadReport` in `page.tsx`), standard JavaScript scoping applies. Helper functions defined with `const` must be declared *before* they are used. They are not hoisted like `function` declarations.
 
 ---
 *Last Updated: Feb 01, 2026 - System Version 2.3 (The "Global Identity & Fallback" Update)*

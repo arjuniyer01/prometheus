@@ -269,51 +269,32 @@ export default function Home() {
     }
   }, [tickers]);
 
-  const generateContextString = useCallback(() => {
-    if (!insight || !tickerData) return "";
+  const getReportMarkdown = useCallback(() => {
+    if (!insight || !tickerData) return null;
 
     const meta = insight.metadata;
-    const name = tickerData.company_name || tickerData.name || selectedSymbol;
-
-    let context = `Context for ${name} (${selectedSymbol}):\n`;
-    context += `Executive Summary: ${insight.summary_text || meta.executive_summary}\n`;
-    context += `Prometheus Score: ${meta.prometheus_score}/100\n`;
-    context += `Financials: ${meta.quarterly_analysis}\n`;
-    context += `Trends: ${meta.annual_trends}\n`;
-    context += `Sector: ${meta.sector_analysis}\n`;
-    context += `Institution: ${meta.institutional_analysis}\n`;
-    context += `Recent Filings: ${meta.sec_analysis}\n`;
-    context += `Bull Case: ${(insight.bull_case || []).join(", ")}\n`;
-    context += `Bear Case: ${(insight.bear_case || []).join(", ")}\n`;
-
-    return context;
-  }, [insight, tickerData, selectedSymbol]);
-
-  const askAiQuestion = useCallback(() => {
-    if (!aiQuery.trim()) return;
-
-    const context = generateContextString();
-    const fullPrompt = `${context}\n\nUser Question: ${aiQuery}\n\nPlease provide a deep institutional-grade analysis based on the context above and your real-time knowledge.`;
-
-    const url = `https://www.perplexity.ai/search?q=${encodeURIComponent(fullPrompt)}`;
-    window.open(url, '_blank');
-    setAiQuery("");
-    setIsAiOpen(false);
-
-    toast({
-      title: "Query Sent to Perplexity",
-      description: "Opening in a new tab with full dashboard context.",
-    });
-  }, [aiQuery, generateContextString, toast]);
-
-  const downloadReport = useCallback(() => {
-    if (!insight || !tickerData) return;
-
-    const meta = insight.metadata;
-    const isIndianStock = isIndian;
+    const isIndian = insight?.metadata?.currency === 'INR' || selectedSymbol?.endsWith('.NS') || selectedSymbol?.endsWith('.BO') || tickerData?.market === 'INDIA';
+    const isIndianStock = isIndian; // Alias for consistency
     const currency = isIndianStock ? "₹" : "$";
     const name = tickerData.company_name || tickerData.name || selectedSymbol;
     const date = insight.created_at ? new Date(insight.created_at).toLocaleDateString() : new Date().toLocaleDateString();
+
+    // Helper functions
+    const formatFin = (val: number) => isIndianStock ? (val / 1e7).toFixed(1) + ' Cr' : (val / 1e9).toFixed(2) + 'B';
+    const formatPrice = (val: any) => typeof val === 'number' ? (isIndianStock ? val.toFixed(2) : val.toFixed(2)) : val;
+    const formatMktCap = (val: any) => typeof val === 'number' ? formatFin(val) : val;
+    const formatPercent = (val: number) => (val * 100).toFixed(1) + '%';
+    const formatPay = (val: number) => {
+      if (!val) return '---';
+      if (isIndian) return `₹${(val / 1e7).toFixed(2)} Cr`;
+      if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
+      return `$${(val / 1e3).toFixed(1)}K`;
+    };
+    const formatVal = (val: number) => {
+      if (!val) return 'Gift/Grant';
+      if (isIndian) return `₹${(val / 1e7).toFixed(2)} Cr`;
+      return `$${(val / 1e6).toFixed(1)}M`;
+    };
 
     let md = `# Prometheus Intelligence Report: ${name} (${selectedSymbol})\n`;
     md += `*Generated on ${date}*\n\n`;
@@ -325,9 +306,6 @@ export default function Home() {
     }
 
     md += `## Market Pulse\n`;
-    const formatPrice = (val: any) => typeof val === 'number' ? (isIndianStock ? val.toFixed(2) : val.toFixed(2)) : val;
-    const formatMktCap = (val: any) => typeof val === 'number' ? formatFin(val) : val;
-
     md += `- **Current Price:** ${currency}${formatPrice(meta.price || meta.quote?.price || '---')}\n`;
     md += `- **Change:** ${meta.changesPercentage !== undefined ? (meta.changesPercentage && typeof meta.changesPercentage === 'object' ? (meta.changesPercentage.NSE || meta.changesPercentage.BSE) : meta.changesPercentage) + '%' : '---'}\n`;
     md += `- **Market Cap:** ${currency}${formatMktCap(meta.marketCap || '---')}\n`;
@@ -404,14 +382,6 @@ export default function Home() {
       md += `## Executive Bench\n`;
       md += `| Name | Title | Age | Total Pay |\n`;
       md += `| :--- | :--- | :--- | :--- |\n`;
-
-      const formatPay = (val: number) => {
-        if (!val) return '---';
-        if (isIndian) return `₹${(val / 1e7).toFixed(2)} Cr`;
-        if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
-        return `$${(val / 1e3).toFixed(1)}K`;
-      };
-
       meta.raw_research_dump.extended_profile.officers.forEach((o: any) => {
         md += `| ${o.name} | ${o.title} | ${o.age || '---'} | ${formatPay(o.totalPay)} |\n`;
       });
@@ -422,13 +392,6 @@ export default function Home() {
       md += `## Recent Insider Transactions\n`;
       md += `| Filer | Relation | Value | Date |\n`;
       md += `| :--- | :--- | :--- | :--- |\n`;
-
-      const formatVal = (val: number) => {
-        if (!val) return 'Gift/Grant';
-        if (isIndian) return `₹${(val / 1e7).toFixed(2)} Cr`;
-        return `$${(val / 1e6).toFixed(1)}M`;
-      };
-
       meta.raw_research_dump.full_analysis.insiderTransactions.slice(0, 10).forEach((t: any) => {
         md += `| ${t.filerName} | ${t.filerRelation} | ${formatVal(t.value)} | ${new Date(t.startDate).toLocaleDateString()} |\n`;
       });
@@ -436,8 +399,6 @@ export default function Home() {
     }
 
     md += `## Historical Financials\n`;
-    const formatFin = (val: number) => isIndianStock ? (val / 1e7).toFixed(1) + ' Cr' : (val / 1e9).toFixed(2) + 'B';
-    const formatPercent = (val: number) => (val * 100).toFixed(1) + '%';
 
     if (financials.length > 0) {
       md += `### Annual (Last 5 Years)\n`;
@@ -475,6 +436,34 @@ export default function Home() {
 
     md += `---\n*Disclaimer: This report is AI-generated for research purposes only. It does not constitute financial advice. Use as a technical co-pilot, not a sole decision maker.*`;
 
+    return md;
+  }, [insight, tickerData, selectedSymbol, financials]);
+
+  const askAiQuestion = useCallback(() => {
+    if (!aiQuery.trim()) return;
+
+    const fullReportCtx = getReportMarkdown();
+    const fullPrompt = `${fullReportCtx}\n\nUser Question: ${aiQuery}\n\nPlease provide a deep institutional-grade analysis based on the context above and your real-time knowledge.`;
+
+    const url = `https://www.perplexity.ai/search?q=${encodeURIComponent(fullPrompt)}`;
+    window.open(url, '_blank');
+    setAiQuery("");
+    setIsAiOpen(false);
+
+    toast({
+      title: "Query Sent to Perplexity",
+      description: "Opening in a new tab with full dashboard context.",
+    });
+  }, [aiQuery, getReportMarkdown, toast]);
+
+  const downloadReport = useCallback(() => {
+    const md = getReportMarkdown();
+    if (!md) return;
+
+    // Determine filename vars reusing logic is simplest by just re-accessing state, or extract from helper. 
+    // But since download name is simple:
+    const name = tickerData?.company_name || tickerData?.name || selectedSymbol;
+
     const blob = new Blob([md], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -489,7 +478,7 @@ export default function Home() {
       title: "Report Generated",
       description: `Analysis for ${selectedSymbol} downloaded as Markdown.`,
     });
-  }, [insight, tickerData, selectedSymbol, toast]);
+  }, [getReportMarkdown, tickerData, selectedSymbol, toast]);
 
   const copyRawDump = useCallback(() => {
     if (!insight?.metadata?.raw_research_dump) return;
