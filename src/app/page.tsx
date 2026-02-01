@@ -851,6 +851,28 @@ export default function Home() {
                 </div>
               </GlassCard>
             </div>
+            {/* RAW RESEARCH DUMP (FOR DEBUGGING/HIDDEN DATA) */}
+            <div className="mt-12 pt-12 border-t border-white/5 opacity-40 hover:opacity-100 transition-opacity">
+              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-3">
+                <Zap className="w-3 h-3" /> Raw Research Engine Dump (Legacy/Internal)
+              </h2>
+              <GlassCard className="p-0 border-white/5 bg-black/20 overflow-hidden">
+                <div className="p-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
+                  <span className="text-[9px] font-mono text-slate-500">SYSTEM_RESEARCH_LOG_v2.5</span>
+                  <span className="text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest animate-pulse">Live Link Active</span>
+                </div>
+                <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar">
+                  <pre className="text-[10px] font-mono leading-relaxed text-slate-500 whitespace-pre-wrap">
+                    {insight?.metadata?.raw_research_dump
+                      ? JSON.stringify(insight.metadata.raw_research_dump, null, 2)
+                      : "// No raw research buffer detected for this asset.\n// Ensure deep scan is completed."}
+                  </pre>
+                </div>
+              </GlassCard>
+              <p className="mt-4 text-[9px] text-slate-600 font-mono italic">
+                * This data is fetched directly from unmapped model endpoints and is provided for audit purposes.
+              </p>
+            </div>
           </div>
         </div>
       ) : (

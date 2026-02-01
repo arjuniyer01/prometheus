@@ -16,7 +16,10 @@ import {
     getSECProfile,
     getAnalystRecommendations,
     getTechnicalSMA,
-    fetchFMP
+    fetchFMP,
+    getCashFlow,
+    getFullAnalysis,
+    getSustainability
 } from "@/lib/scrapers";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
@@ -115,15 +118,18 @@ export const analyzeTicker = inngest.createFunction(
 
         const sectorData = await step.run("fetch-sector-performance", async () => {
             console.log(`Fetching Sector Performance for ${ticker}...`);
-            const [current, historical, sectorETFHistory, analystRecs, sma50, sma200] = await Promise.all([
+            const [current, historical, sectorETFHistory, analystRecs, sma50, sma200, cashFlow, sustainability, fullAnalysis] = await Promise.all([
                 getSectorPerformance(),
-                getHistoricalSectorPerformance(90), // 90 days for trend/rotation
+                getHistoricalSectorPerformance(90),
                 getSectorETFHistory(data.profile.sector),
                 getAnalystRecommendations(ticker),
                 getTechnicalSMA(ticker, 50),
-                getTechnicalSMA(ticker, 200)
+                getTechnicalSMA(ticker, 200),
+                getCashFlow(ticker, 'annual', 5),
+                getSustainability(ticker),
+                getFullAnalysis(ticker)
             ]);
-            return { current, historical, sectorETFHistory, analystRecs, sma50, sma200 };
+            return { current, historical, sectorETFHistory, analystRecs, sma50, sma200, cashFlow, sustainability, fullAnalysis };
         });
 
         await step.run("update-status-analyzing", async () => {
@@ -310,7 +316,14 @@ export const analyzeTicker = inngest.createFunction(
                         url: n.url,
                         source: n.source,
                         datetime: n.datetime
-                    }))
+                    })),
+                    raw_research_dump: {
+                        cash_flow: sectorData.cashFlow,
+                        sustainability: sectorData.sustainability,
+                        full_analysis: sectorData.fullAnalysis,
+                        extended_profile: data.profile,
+                        extended_metrics: data.metrics
+                    }
                 }
             });
 

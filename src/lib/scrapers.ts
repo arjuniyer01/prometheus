@@ -1,13 +1,26 @@
 const FMP_API_KEY = process.env.FMP_API_KEY;
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 
+import {
+    getYahooHistoricalPrices,
+    getYahooIncomeStatement,
+    getYahooBalanceSheet,
+    getYahooQuote,
+    getYahooProfile,
+    getYahooMetrics,
+    getYahooNews,
+    getYahooRecommendations,
+    getYahooCashFlow,
+    getYahooAnalysis,
+    getYahooSustainability
+} from './yahoo-finance';
+
 /**
  * FMP has moved to a 'stable' endpoint for new users (post Aug 2025).
  * URL format: https://financialmodelingprep.com/stable/{endpoint}?symbol={symbol}&apikey={key}
  */
 export async function fetchFMP(endpoint: string, params: Record<string, string> = {}) {
-    // Check if symbol is in params, if not we might need to handle it differently
-    // but usually profile, ratios, metrics all take 'symbol' as a query param in 'stable'
+    /* COMMENTED OUT FMP
     const url = new URL(`https://financialmodelingprep.com/stable/${endpoint}`);
     url.searchParams.append('apikey', FMP_API_KEY!);
     Object.entries(params).forEach(([key, value]) => url.searchParams.append(key, value));
@@ -30,12 +43,15 @@ export async function fetchFMP(endpoint: string, params: Record<string, string> 
     }
 
     return response.json();
+    */
+    return [];
 }
 
 export async function getCompanyProfile(symbol: string) {
     try {
-        const data = await fetchFMP(`profile`, { symbol });
-        return data?.[0] || null;
+        const yahooProfile = await getYahooProfile(symbol);
+        if (yahooProfile) return yahooProfile;
+        return null;
     } catch (error) {
         console.error(`Profile fetch failed for ${symbol}:`, error);
         return null;
@@ -44,8 +60,9 @@ export async function getCompanyProfile(symbol: string) {
 
 export async function getQuote(symbol: string) {
     try {
-        const data = await fetchFMP(`quote`, { symbol });
-        return data?.[0] || null;
+        const yahooQuote = await getYahooQuote(symbol);
+        if (yahooQuote) return yahooQuote;
+        return null;
     } catch (error) {
         console.error(`Quote fetch failed for ${symbol}:`, error);
         return null;
@@ -54,8 +71,9 @@ export async function getQuote(symbol: string) {
 
 export async function getKeyMetrics(symbol: string) {
     try {
-        const data = await fetchFMP(`key-metrics`, { symbol, limit: '1' });
-        return data?.[0] || null;
+        const yahooMetrics = await getYahooMetrics(symbol);
+        if (yahooMetrics) return yahooMetrics;
+        return null;
     } catch (error) {
         console.error(`Key metrics fetch failed for ${symbol}:`, error);
         return null;
@@ -64,8 +82,10 @@ export async function getKeyMetrics(symbol: string) {
 
 export async function getFinancialRatios(symbol: string) {
     try {
-        const data = await fetchFMP(`ratios`, { symbol, limit: '1' });
-        return data?.[0] || null;
+        // Yahoo metrics includes ratios in our wrapper
+        const yahooMetrics = await getYahooMetrics(symbol);
+        if (yahooMetrics) return yahooMetrics;
+        return null;
     } catch (error) {
         console.error(`Financial ratios fetch failed for ${symbol}:`, error);
         return null;
@@ -73,6 +93,7 @@ export async function getFinancialRatios(symbol: string) {
 }
 
 export async function getFinnhubFinancials(symbol: string) {
+    /* COMMENTED OUT FINNHUB 
     try {
         const response = await fetch(`https://finnhub.io/api/v1/stock/metric?symbol=${symbol}&metric=all&token=${FINNHUB_API_KEY}`);
         if (!response.ok) return null;
@@ -82,196 +103,104 @@ export async function getFinnhubFinancials(symbol: string) {
         console.error(`Finnhub financials fetch failed for ${symbol}:`, error);
         return null;
     }
+    */
+    return getYahooMetrics(symbol);
 }
 
 export async function getFMPNews(symbol: string) {
-    try {
-        return await fetchFMP(`stock_news`, { tickers: symbol, limit: '10' });
-    } catch (error) {
-        console.error(`FMP News fetch failed for ${symbol}:`, error);
-        return [];
-    }
+    return getYahooNews(symbol);
 }
 
 export async function getNews(symbol: string) {
-    try {
-        // 1. Try FMP News first (Priority)
-        const fmpNews = await getFMPNews(symbol);
-        if (fmpNews && fmpNews.length > 0) return fmpNews;
-
-        console.warn(`FMP News empty for ${symbol}, falling back to Finnhub`);
-    } catch (error) {
-        console.warn(`FMP News failed for ${symbol}:`, error);
-    }
-
-    // 2. Fallback to Finnhub
-    try {
-        const response = await fetch(`https://finnhub.io/api/v1/company-news?symbol=${symbol}&from=2024-01-01&to=2026-01-25&token=${FINNHUB_API_KEY}`);
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data;
-    } catch (error) {
-        console.error("News fallback failed:", error);
-        return [];
-    }
+    return getYahooNews(symbol);
 }
 
 /**
  * Fetch SEC Submissions (10-K, 10-Q, 8-K) for a given CIK.
  */
 export async function getSECSubmissions(cik: string) {
-    if (!cik) return null;
-    const paddedCik = cik.padStart(10, '0');
-    const url = `https://data.sec.gov/submissions/CIK${paddedCik}.json`;
-
-    const response = await fetch(url, {
-        headers: {
-            'User-Agent': 'Prometheus Financial Intelligence (contact@example.com)'
-        }
-    });
-
-    if (!response.ok) {
-        if (response.status === 403) return { error: "SEC Rate Limited or Blocked" };
-        throw new Error(`SEC API Error: ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return {
-        recent: data.filings.recent,
-        name: data.name
-    };
+    // SEC data is harder via Yahoo, keeping it null for now
+    return null;
 }
 
 /**
  * Fetch SEC Profile for a given symbol (Stable)
  */
 export async function getSECProfile(symbol: string) {
-    try {
-        const data = await fetchFMP(`sec-profile`, { symbol });
-        return data?.[0] || null;
-    } catch (error) {
-        console.error(`SEC Profile fetch failed for ${symbol}:`, error);
-        return null;
-    }
+    return null;
 }
 
 /**
  * Fetch historical daily prices for the last 30 days.
  */
 export async function getFinnhubHistoricalPrices(symbol: string) {
-    try {
-        const to = Math.floor(Date.now() / 1000);
-        const from = to - (5 * 365 * 24 * 60 * 60);
-        const res = await fetch(`https://finnhub.io/api/v1/stock/candle?symbol=${symbol}&resolution=D&from=${from}&to=${to}&token=${FINNHUB_API_KEY}`);
-
-        if (!res.ok) return [];
-        const data = await res.json();
-
-        if (data.s !== 'ok') {
-            return [];
-        }
-
-        return data.t.map((timestamp: number, i: number) => ({
-            date: new Date(timestamp * 1000).toISOString().split('T')[0],
-            close: data.c[i],
-            open: data.o[i],
-            high: data.h[i],
-            low: data.l[i],
-            volume: data.v[i],
-            symbol: symbol
-        })).reverse();
-    } catch (error) {
-        console.error(`Finnhub historical prices failed for ${symbol}:`, error);
-        return [];
-    }
+    return getYahooHistoricalPrices(symbol);
 }
 
 export async function getHistoricalPrices(symbol: string) {
-    try {
-        // User prefers historical-chart/1day for stable
-        const data = await fetchFMP(`historical-chart/1day/${symbol}`);
-        if (Array.isArray(data) && data.length > 0) {
-            return data;
-        }
-    } catch (error) {
-        console.warn(`[FMP] Stable historical-chart unavailable for ${symbol}, trying eod/full fallback`);
-    }
-
-    try {
-        const data = await fetchFMP(`historical-price-eod/full`, { symbol });
-        if (Array.isArray(data) && data.length > 0) {
-            return data;
-        }
-    } catch (error) {
-        console.warn(`[FMP] Stable historical eod/full unavailable for ${symbol}`);
-    }
-
-    // Last resort: Finnhub
-    return getFinnhubHistoricalPrices(symbol);
+    return getYahooHistoricalPrices(symbol);
 }
 
 export async function getIncomeStatement(symbol: string, period: 'annual' | 'quarter' = 'annual', limit: number = 5) {
     try {
-        return await fetchFMP(`income-statement`, { symbol, period, limit: limit.toString() });
+        const yahooData = await getYahooIncomeStatement(symbol, period);
+        if (yahooData && yahooData.length > 0) {
+            return yahooData.slice(0, limit);
+        }
     } catch (error) {
-        console.error(`Income statement fetch failed for ${symbol}:`, error);
-        return [];
+        console.warn(`[Yahoo Finance] Income statement failed for ${symbol}`);
     }
+
+    return [];
 }
 
 export async function getBalanceSheet(symbol: string, period: 'annual' | 'quarter' = 'annual', limit: number = 5) {
     try {
-        return await fetchFMP(`balance-sheet-statement`, { symbol, period, limit: limit.toString() });
+        const yahooData = await getYahooBalanceSheet(symbol, period);
+        if (yahooData && yahooData.length > 0) {
+            return yahooData.slice(0, limit);
+        }
     } catch (error) {
-        console.error(`Balance sheet fetch failed for ${symbol}:`, error);
-        return [];
+        console.warn(`[Yahoo Finance] Balance sheet failed for ${symbol}`);
     }
+
+    return [];
 }
 
 export async function getSectorPerformance() {
-    try {
-        // use today's or yesterday's date for snapshot
-        const today = new Date().toISOString().split('T')[0];
-        return await fetchFMP(`sector-performance-snapshot`, { date: today });
-    } catch (error) {
-        console.warn("Sector performance snapshot failed for today, trying a few days ago...");
-        // Fallback to a fixed relative date to ensure stability
-        const date = new Date();
-        date.setDate(date.getDate() - 3); // 3 days ago should have data
-        const fallbackDate = date.toISOString().split('T')[0];
-        try {
-            return await fetchFMP(`sector-performance-snapshot`, { date: fallbackDate });
-        } catch (e) {
-            console.error("Sector performance fetch failed completely:", e);
-            return [];
-        }
-    }
+    // Yahoo doesn't give this as a simple list.
+    return [];
 }
 
 export async function getHistoricalSectorPerformance(limit: number = 30) {
-    try {
-        // User reports /v3/ is legacy, but /stable/historical-sectors-performance might be 404
-        // We will try stable first as requested.
-        return await fetchFMP(`historical-sectors-performance`, { limit: limit.toString() });
-    } catch (error) {
-        console.warn("Historical sector performance stable failed, no fallback available for this specific path.");
-        return [];
-    }
+    return [];
 }
 
 export async function getAnalystRecommendations(symbol: string) {
     try {
-        return await fetchFMP(`analyst-stock-recommendations`, { symbol });
+        return await getYahooRecommendations(symbol);
     } catch (error) {
         return [];
     }
 }
 
 export async function getTechnicalSMA(symbol: string, period: number = 50) {
+    return [];
+}
+
+export async function getCashFlow(symbol: string, period: 'annual' | 'quarter' = 'annual', limit: number = 5) {
     try {
-        // Technically this might be in /v3/ but let's try stable first
-        return await fetchFMP(`technical_indicator/daily/${symbol}`, { period: period.toString(), type: 'sma' });
+        const data = await getYahooCashFlow(symbol, period);
+        return data.slice(0, limit);
     } catch (error) {
         return [];
     }
+}
+
+export async function getFullAnalysis(symbol: string) {
+    return await getYahooAnalysis(symbol);
+}
+
+export async function getSustainability(symbol: string) {
+    return await getYahooSustainability(symbol);
 }

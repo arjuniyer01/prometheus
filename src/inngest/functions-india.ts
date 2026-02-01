@@ -12,7 +12,10 @@ import {
     getHistoricalStatsIndia,
     getStockForecastsIndia,
     getStockTargetPriceIndia,
-    getRecentAnnouncementsIndia
+    getRecentAnnouncementsIndia,
+    getCashFlowIndia,
+    getFullAnalysisIndia,
+    getSustainabilityIndia
 } from "@/lib/scrapers-india";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
@@ -225,18 +228,40 @@ export const analyzeTickerIndia = inngest.createFunction(
             return { trending, mostActive, peers, indexHistory };
         });
 
-        const [ratios, forecasts, targets, announcements] = await Promise.all([
-            getHistoricalStatsIndia(ticker, 'ratios'),
-            getStockForecastsIndia(ticker, 'EPS'),
-            getStockTargetPriceIndia(ticker),
-            getRecentAnnouncementsIndia(ticker)
-        ]);
+        const extraDataFetch = await step.run("fetch-extra-data-india", async () => {
+            const [ratios, forecasts, targets, announcements, cashFlow, fullAnalysis, sustainability] = await Promise.all([
+                getHistoricalStatsIndia(ticker, 'ratios'),
+                getStockForecastsIndia(ticker, 'EPS'),
+                getStockTargetPriceIndia(ticker),
+                getRecentAnnouncementsIndia(ticker),
+                getCashFlowIndia(ticker, 'annual', 5),
+                getFullAnalysisIndia(ticker),
+                getSustainabilityIndia(ticker)
+            ]);
+            return { ratios, forecasts, targets, announcements, cashFlow, fullAnalysis, sustainability };
+        });
+
+        const data = {
+            profile,
+            financials,
+            corporateActions,
+            historicalPrices,
+            news,
+            sectorData,
+            ratios: extraDataFetch.ratios,
+            forecasts: extraDataFetch.forecasts,
+            targets: extraDataFetch.targets,
+            announcements: extraDataFetch.announcements,
+            extraData: {
+                cashFlow: extraDataFetch.cashFlow,
+                fullAnalysis: extraDataFetch.fullAnalysis,
+                sustainability: extraDataFetch.sustainability
+            }
+        };
 
         await step.run("update-status-analyzing", async () => {
             await supabase.from('tickers').update({ sync_status: 'ANALYZING', sync_percent: 60 }).eq('symbol', ticker);
         });
-
-        const data = { profile, financials, corporateActions, historicalPrices, news, sectorData, ratios, forecasts, targets, announcements };
 
 
         const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
@@ -371,9 +396,9 @@ export const analyzeTickerIndia = inngest.createFunction(
                 });
             }
 
-            if (financialRecords.length === 0 && data.profile.raw?.financials) {
+            if (financialRecords.length === 0 && (data.profile as any).financials) {
                 console.log(`Falling back to profile financials for ${ticker}...`);
-                const rawFins = data.profile.raw.financials;
+                const rawFins = (data.profile as any).financials;
                 rawFins.forEach((f: any) => {
                     const transformed = transformRowFinancials(f);
                     if (transformed) {
@@ -433,7 +458,14 @@ export const analyzeTickerIndia = inngest.createFunction(
                         url: n.url,
                         source: n.source,
                         date: n.date
-                    }))
+                    })),
+                    raw_research_dump: {
+                        cash_flow: data.extraData.cashFlow,
+                        full_analysis: data.extraData.fullAnalysis,
+                        sustainability: data.extraData.sustainability,
+                        extended_profile: data.profile,
+                        extended_metrics: data.ratios
+                    }
                 }
 
             });

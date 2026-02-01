@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:yahoo": "npx tsx scripts/test-yahoo.ts"
   },
   "dependencies": {
     "@google/genai": "^1.38.0",
@@ -30,6 +31,7 @@
     "react-dom": "19.2.3",
     "recharts": "^3.7.0",
     "tailwind-merge": "^3.4.0",
+    "yahoo-finance2": "^3.13.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
