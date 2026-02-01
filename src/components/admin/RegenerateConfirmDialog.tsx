@@ -41,7 +41,6 @@ export function RegenerateConfirmDialog({
                     </DialogTitle>
                     <DialogDescription className="text-center text-slate-400 text-sm mt-2 px-4 leading-relaxed">
                         You are about to trigger a deep financial synthesis for <span className="text-white font-bold">{count} assets</span>.
-                        This operation is resource-intensive and will consume Gemini & FMP API credits.
                     </DialogDescription>
                 </DialogHeader>
 
