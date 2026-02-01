@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from "react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { MetricCopilot } from "@/components/dashboard/MetricCopilot";
 import { PrometheusScore } from "@/components/dashboard/PrometheusScore";
+import { InstitutionalIntelligence } from "@/components/dashboard/InstitutionalIntelligence";
+import { ExecutiveBench } from "@/components/dashboard/ExecutiveBench";
 import { supabase } from "@/lib/supabase";
 import {
   Plus,
@@ -16,7 +18,11 @@ import {
   Info,
   Search,
   Sparkles,
-  FileDown
+  FileDown,
+  Copy,
+  Check,
+  BrainCircuit,
+  SendHorizontal
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -40,6 +46,11 @@ export default function Home() {
   const [finView, setFinView] = useState<'annual' | 'quarterly'>('annual');
   const [loading, setLoading] = useState(true);
   const [loadingPrices, setLoadingPrices] = useState(false);
+  const [liveNews, setLiveNews] = useState<any[]>([]);
+  const [loadingNews, setLoadingNews] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [aiQuery, setAiQuery] = useState("");
+  const [isAiOpen, setIsAiOpen] = useState(false);
   const { toast } = useToast();
 
   const fetchTickers = useCallback(async () => {
@@ -95,6 +106,25 @@ export default function Home() {
 
     if (profile) setTickerData(profile);
     if (finData) setFinancials(finData);
+
+    // Fetch live news
+    fetchLiveNews(symbol);
+  }, []);
+
+  const fetchLiveNews = useCallback(async (symbol: string) => {
+    setLoadingNews(true);
+    setLiveNews([]);
+    try {
+      const response = await fetch(`/api/news/${symbol}`);
+      if (response.ok) {
+        const data = await response.json();
+        setLiveNews(data);
+      }
+    } catch (error) {
+      console.error("Live news fetch failed:", error);
+    } finally {
+      setLoadingNews(false);
+    }
   }, []);
 
   const fetchPrices = useCallback(async (symbol: string) => {
@@ -102,19 +132,16 @@ export default function Home() {
     setPrices([]); // Reset prices to prevent stale chart display
     try {
 
-      // 1. Try fetching from Supabase first (Task 6)
-      const { data: dbPrices } = await supabase
-        .from('market_data')
-        .select('*')
-        .eq('symbol', symbol)
-        .order('timestamp', { ascending: true });
-
-      if (dbPrices && dbPrices.length > 0) {
-        setPrices(dbPrices.map(p => ({
-          date: p.timestamp,
-          close: p.close
-        })));
-        setLoadingPrices(false);
+      // Fetch live from Yahoo via our API
+      const response = await fetch(`/api/stock/historical/${symbol}`);
+      if (response.ok) {
+        const livePrices = await response.json();
+        if (livePrices && livePrices.length > 0) {
+          setPrices(livePrices.map((p: any) => ({
+            date: p.date,
+            close: p.close
+          })));
+        }
       }
     } catch (e) {
       console.error(e);
@@ -124,11 +151,48 @@ export default function Home() {
     }
   }, []);
 
+  const generateContextString = useCallback(() => {
+    if (!insight || !tickerData) return "";
+
+    const meta = insight.metadata;
+    const name = tickerData.company_name || tickerData.name || selectedSymbol;
+
+    let context = `Context for ${name} (${selectedSymbol}):\n`;
+    context += `Executive Summary: ${insight.summary_text || meta.executive_summary}\n`;
+    context += `Prometheus Score: ${meta.prometheus_score}/100\n`;
+    context += `Financials: ${meta.quarterly_analysis}\n`;
+    context += `Trends: ${meta.annual_trends}\n`;
+    context += `Sector: ${meta.sector_analysis}\n`;
+    context += `Institution: ${meta.institutional_analysis}\n`;
+    context += `Recent Filings: ${meta.sec_analysis}\n`;
+    context += `Bull Case: ${(insight.bull_case || []).join(", ")}\n`;
+    context += `Bear Case: ${(insight.bear_case || []).join(", ")}\n`;
+
+    return context;
+  }, [insight, tickerData, selectedSymbol]);
+
+  const askAiQuestion = useCallback(() => {
+    if (!aiQuery.trim()) return;
+
+    const context = generateContextString();
+    const fullPrompt = `${context}\n\nUser Question: ${aiQuery}\n\nPlease provide a deep institutional-grade analysis based on the context above and your real-time knowledge.`;
+
+    const url = `https://www.perplexity.ai/search?q=${encodeURIComponent(fullPrompt)}`;
+    window.open(url, '_blank');
+    setAiQuery("");
+    setIsAiOpen(false);
+
+    toast({
+      title: "Query Sent to Perplexity",
+      description: "Opening in a new tab with full dashboard context.",
+    });
+  }, [aiQuery, generateContextString, toast]);
+
   const downloadReport = useCallback(() => {
     if (!insight || !tickerData) return;
 
     const meta = insight.metadata;
-    const isIndianStock = meta?.currency === 'INR' || tickerData?.market === 'INDIA' || selectedSymbol?.endsWith(".NS") || selectedSymbol?.endsWith(".BO");
+    const isIndianStock = isIndian;
     const currency = isIndianStock ? "₹" : "$";
     const name = tickerData.company_name || tickerData.name || selectedSymbol;
     const date = insight.created_at ? new Date(insight.created_at).toLocaleDateString() : new Date().toLocaleDateString();
@@ -177,6 +241,12 @@ export default function Home() {
         md += `  - *Seasonality Strength:* ${meta.sector_subscores.seasonality_strength}/100\n`;
         md += `  - *Rotation Inflow:* ${meta.sector_subscores.rotation_inflow}/100\n`;
       }
+      md += `- **Institutional Intelligence:** ${meta.score_breakdown.institutional_score || 0}/100\n`;
+      if (meta.institutional_subscores) {
+        md += `  - *Analyst Conviction:* ${meta.institutional_subscores.analyst_conviction}/100\n`;
+        md += `  - *Insider Signal:* ${meta.institutional_subscores.insider_signal}/100\n`;
+        md += `  - *Earnings Reliability:* ${meta.institutional_subscores.earnings_reliability}/100\n`;
+      }
       md += `\n`;
     }
 
@@ -191,8 +261,17 @@ export default function Home() {
     md += `### 📊 Quarterly Performance\n${meta.quarterly_analysis || "N/A"}\n\n`;
     md += `### 📈 5-Year Strategy & Trends\n${meta.annual_trends || "N/A"}\n\n`;
     md += `### 🌐 Sector Intelligence\n${meta.sector_analysis || "N/A"}\n\n`;
-    md += `### ⚖️ Regulatory Synthesis\n${meta.sec_analysis || "N/A"}\n\n`;
-    md += `### 💬 News & Sentiment\n${meta.sentiment_summary || "N/A"}\n\n`;
+    md += `### 🏛️ Institutional Intelligence\n${meta.institutional_analysis || "N/A"}\n\n`;
+    md += `### ${isIndian ? '🏢 Corporate Actions' : '⚖️ Regulatory Synthesis'}\n${meta.sec_analysis || "N/A"}\n\n`;
+    md += `### 💬 Market Pulse & News\n${meta.sentiment_summary || "N/A"}\n\n`;
+
+    if (liveNews.length > 0) {
+      md += `#### Latest Live Headlines\n`;
+      liveNews.slice(0, 10).forEach(n => {
+        md += `- **${n.title}** (${n.source} | ${new Date(n.date).toLocaleDateString()})\n`;
+      });
+      md += `\n`;
+    }
 
     md += `## Key Metrics Copilot\n`;
     md += `| Metric | Value | Status | Insight |\n`;
@@ -202,6 +281,41 @@ export default function Home() {
       md += `| ${m.label} | ${val} | ${m.status?.toUpperCase()} | ${m.shortExplanation} |\n`;
     });
     md += `\n`;
+
+    if (meta.raw_research_dump?.extended_profile?.officers) {
+      md += `## Executive Bench\n`;
+      md += `| Name | Title | Age | Total Pay |\n`;
+      md += `| :--- | :--- | :--- | :--- |\n`;
+
+      const formatPay = (val: number) => {
+        if (!val) return '---';
+        if (isIndian) return `₹${(val / 1e7).toFixed(2)} Cr`;
+        if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
+        return `$${(val / 1e3).toFixed(1)}K`;
+      };
+
+      meta.raw_research_dump.extended_profile.officers.forEach((o: any) => {
+        md += `| ${o.name} | ${o.title} | ${o.age || '---'} | ${formatPay(o.totalPay)} |\n`;
+      });
+      md += `\n`;
+    }
+
+    if (meta.raw_research_dump?.full_analysis?.insiderTransactions) {
+      md += `## Recent Insider Transactions\n`;
+      md += `| Filer | Relation | Value | Date |\n`;
+      md += `| :--- | :--- | :--- | :--- |\n`;
+
+      const formatVal = (val: number) => {
+        if (!val) return 'Gift/Grant';
+        if (isIndian) return `₹${(val / 1e7).toFixed(2)} Cr`;
+        return `$${(val / 1e6).toFixed(1)}M`;
+      };
+
+      meta.raw_research_dump.full_analysis.insiderTransactions.slice(0, 10).forEach((t: any) => {
+        md += `| ${t.filerName} | ${t.filerRelation} | ${formatVal(t.value)} | ${new Date(t.startDate).toLocaleDateString()} |\n`;
+      });
+      md += `\n`;
+    }
 
     md += `## Historical Financials\n`;
     const formatFin = (val: number) => isIndianStock ? (val / 1e7).toFixed(1) + ' Cr' : (val / 1e9).toFixed(2) + 'B';
@@ -259,6 +373,17 @@ export default function Home() {
     });
   }, [insight, tickerData, selectedSymbol, toast]);
 
+  const copyRawDump = useCallback(() => {
+    if (!insight?.metadata?.raw_research_dump) return;
+    navigator.clipboard.writeText(JSON.stringify(insight.metadata.raw_research_dump, null, 2));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast({
+      title: "Copied to Clipboard",
+      description: "Raw research dump has been copied as JSON.",
+    });
+  }, [insight, toast]);
+
   useEffect(() => {
     fetchTickers();
     const channel = supabase
@@ -308,8 +433,8 @@ export default function Home() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Currency Helper
-  const currencySymbol = insight?.metadata?.currency === 'INR' ? '₹' : '$';
-  const isIndian = insight?.metadata?.currency === 'INR';
+  const isIndian = insight?.metadata?.currency === 'INR' || selectedSymbol?.endsWith('.NS') || selectedSymbol?.endsWith('.BO');
+  const currencySymbol = isIndian ? '₹' : '$';
 
   const getRawChanges = () => {
     const cp = insight?.metadata?.changesPercentage;
@@ -412,6 +537,66 @@ export default function Home() {
                     >
                       <FileDown className="w-3 h-3 group-hover:scale-110 transition-transform" />
                     </button>
+                  )}
+                  {insight && (
+                    <div className="relative">
+                      <button
+                        onClick={() => setIsAiOpen(!isAiOpen)}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all duration-500 group relative overflow-hidden",
+                          isAiOpen
+                            ? "bg-indigo-500/20 border-indigo-500/50 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.3)]"
+                            : "bg-slate-900/40 border-white/5 text-slate-400 hover:text-white hover:border-indigo-500/30 hover:bg-slate-800/60 shadow-xl"
+                        )}
+                        title="Ask Gemini Copilot"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-600/0 via-indigo-600/10 to-purple-600/0 opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+                        <BrainCircuit className={cn("w-3.5 h-3.5 transition-all duration-500 z-10", isAiOpen ? "rotate-[360deg] scale-110 text-indigo-400" : "group-hover:text-indigo-400")} />
+                        <span className="text-[10px] font-black uppercase tracking-[0.2em] z-10 relative whitespace-nowrap">
+                          {isAiOpen ? 'Chatting' : 'ASK AI'}
+                        </span>
+                        {!isAiOpen && <div className="absolute -inset-1 bg-indigo-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity duration-700" />}
+                      </button>
+
+                      {isAiOpen && (
+                        <div className="absolute top-full right-0 mt-4 w-80 p-1.5 rounded-[2rem] bg-slate-950/95 backdrop-blur-3xl border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] z-[100] animate-in fade-in slide-in-from-top-4 zoom-in-95 duration-300">
+                          <div className="p-4 bg-gradient-to-b from-white/[0.03] to-transparent rounded-[1.75rem]">
+                            <div className="flex items-start justify-between mb-3 px-1">
+                              <h4 className="text-[9px] font-black text-amber-500/80 uppercase tracking-wider leading-tight">
+                                DISCLAIMER: This request will go to the Perplexity AI website
+                              </h4>
+                            </div>
+
+                            <div className="relative group/input">
+                              <textarea
+                                value={aiQuery}
+                                autoFocus
+                                onChange={(e) => setAiQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter' && !e.shiftKey) {
+                                    e.preventDefault();
+                                    askAiQuestion();
+                                  }
+                                }}
+                                placeholder={`Ask about ${selectedSymbol}'s strategy, competitive moats, or guidance...`}
+                                className="w-full bg-black/60 border border-white/5 rounded-2xl p-4 text-xs text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/20 resize-none h-32 mb-3 transition-all custom-scrollbar leading-relaxed"
+                              />
+                              <div className="absolute inset-0 rounded-2xl border border-indigo-500/0 group-focus-within/input:border-indigo-500/20 pointer-events-none transition-all duration-500" />
+                            </div>
+
+                            <button
+                              onClick={askAiQuestion}
+                              disabled={!aiQuery.trim()}
+                              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-black uppercase tracking-[0.15em] transition-all disabled:opacity-30 disabled:grayscale disabled:cursor-not-allowed group/btn shadow-[0_0_20px_rgba(79,70,229,0.2)] hover:shadow-[0_0_25px_rgba(79,70,229,0.4)] active:scale-[0.98]"
+                            >
+                              <span>Send</span>
+                              <SendHorizontal className="w-3.5 h-3.5 group-hover/btn:translate-x-1 transition-transform" />
+                            </button>
+
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -618,17 +803,30 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <a
-                      href={isIndian
-                        ? `https://www.sebi.gov.in/search.html?searchval=${selectedSymbol}`
-                        : `https://www.sec.gov/cgi-bin/browse-edgar?CIK=${insight.metadata?.cik || selectedSymbol}&action=getcompany`
-                      }
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block w-full text-center py-2.5 rounded-xl bg-amber-500/10 hover:bg-white/10 text-amber-400 text-[10px] font-bold uppercase tracking-widest transition-all"
-                    >
-                      {isIndian ? 'Search on SEBI' : 'View SEC History'}
-                    </a>
+                    <div className="flex flex-col gap-2">
+                      <a
+                        href={isIndian
+                          ? `https://www.sebi.gov.in/search.html?searchval=${selectedSymbol}`
+                          : `https://www.sec.gov/cgi-bin/browse-edgar?CIK=${insight.metadata?.cik || selectedSymbol}&action=getcompany`
+                        }
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block w-full text-center py-2.5 rounded-xl bg-amber-500/10 hover:bg-white/10 text-amber-400 text-[10px] font-bold uppercase tracking-widest transition-all border border-amber-500/10"
+                      >
+                        {isIndian ? 'Search on SEBI' : 'View SEC History'}
+                      </a>
+
+                      {isIndian && (
+                        <a
+                          href="https://www.nseindia.com/companies-listing/corporate-filings-announcements"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="block w-full text-center py-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-[10px] font-bold uppercase tracking-widest transition-all border border-white/5"
+                        >
+                          NSE Corporate Filings
+                        </a>
+                      )}
+                    </div>
 
                   </div>
                 ) : (
@@ -667,33 +865,42 @@ export default function Home() {
                       </div>
                     </div>
 
-                    <div className="space-y-3">
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">News Headlines</h4>
-                      {insight.metadata.top_headlines?.map((news: any, i: number) => (
-                        <a
-                          key={i}
-                          href={news.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-sky-500/20 transition-all group/news"
-                        >
-                          <p className="text-[11px] font-medium text-slate-400 group-hover/news:text-slate-200 line-clamp-2 leading-snug mb-1">
-                            {news.headline}
-                          </p>
-                          <div className="flex items-center justify-between text-[8px] uppercase font-bold text-slate-600">
-                            <span>{news.source}</span>
-                            <span>
-                              {news.datetime
-                                ? new Date(news.datetime * 1000).toLocaleDateString([], { month: 'short', day: 'numeric' })
-                                : (news.date ? news.date : 'Recent')}
-                            </span>
-
+                    <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Live News Aggregator</h4>
+                      <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2 max-h-[400px]">
+                        {loadingNews ? (
+                          <div className="flex flex-col items-center justify-center py-10 gap-3 opacity-50">
+                            <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
+                            <p className="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Hydrating Feeds...</p>
                           </div>
-                        </a>
-                      ))}
-                      {!insight.metadata.top_headlines && (
-                        <p className="text-[10px] text-slate-600 italic">No recent headlines analyzed.</p>
-                      )}
+                        ) : liveNews.length > 0 ? (
+                          liveNews.map((news: any, i: number) => (
+                            <a
+                              key={i}
+                              href={news.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="block p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-sky-500/20 transition-all group/news"
+                            >
+                              <p className="text-[11px] font-medium text-slate-400 group-hover/news:text-slate-200 line-clamp-2 leading-snug mb-1">
+                                {news.title}
+                              </p>
+                              <div className="flex items-center justify-between text-[8px] uppercase font-bold text-slate-600">
+                                <span>{news.source}</span>
+                                <span>
+                                  {news.date
+                                    ? new Date(news.date).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                                    : 'Recent'}
+                                </span>
+                              </div>
+                            </a>
+                          ))
+                        ) : (
+                          <div className="py-10 text-center">
+                            <p className="text-[10px] text-slate-600 font-mono italic">No live headlines detected for this asset.</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </>
                 ) : (
@@ -705,6 +912,18 @@ export default function Home() {
               </GlassCard>
             </div>
           </div>
+
+          {/* INSTITUTIONAL INTELLIGENCE SECTION */}
+          {insight?.metadata?.raw_research_dump && (
+            <div className="mt-6">
+              <InstitutionalIntelligence
+                rawDump={insight.metadata.raw_research_dump}
+                analysis={insight.metadata.institutional_analysis}
+                subscores={insight.metadata.institutional_subscores}
+                isIndian={isIndian}
+              />
+            </div>
+          )}
 
           {/* NEW BOTTOM SECTION: DEEP ANALYSIS & HISTORICALS */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
@@ -747,25 +966,18 @@ export default function Home() {
               </div>
               <GlassCard className="p-6 border-white/5 bg-white/[0.01]">
                 <h4 className="text-[10px] font-bold text-slate-500 uppercase mb-3 tracking-wider">Search for Presentations & Guidance</h4>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   <a
                     href={`https://www.google.com/search?q=${selectedSymbol}+investor+presentation`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex flex-col items-center justify-center p-6 rounded-2xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-sky-500/30 transition-all group shadow-xl"
                   >
-                    <Search className="w-6 h-6 text-slate-500 group-hover:text-sky-400 mb-3 transition-all duration-300" />
-                    <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase tracking-widest transition-colors text-center">Investor Decks</span>
-                  </a>
-
-                  <a
-                    href={`https://www.perplexity.ai/search?q=Find+the+latest+investor+presentation+and+investor+day+deck+for+${selectedSymbol}.+Summarize+the+full-year+guidance+and+key+strategic+pillars.`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex flex-col items-center justify-center p-6 rounded-2xl bg-indigo-500/[0.03] border border-indigo-500/10 hover:bg-indigo-500/[0.08] hover:border-indigo-500/40 transition-all group shadow-xl"
-                  >
-                    <Sparkles className="w-6 h-6 text-indigo-500/60 group-hover:text-indigo-400 mb-3 animate-pulse" />
-                    <span className="text-[10px] font-bold text-indigo-400/80 group-hover:text-white uppercase tracking-widest transition-colors text-center">Strategic Synthesis</span>
+                    <Search className="w-8 h-8 text-slate-500 group-hover:text-sky-400 mb-3 transition-all duration-300" />
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] font-bold text-slate-500 group-hover:text-white uppercase tracking-widest transition-colors">Investor Decks</span>
+                      <span className="text-[8px] text-slate-600 font-medium uppercase mt-1">Direct Google Search</span>
+                    </div>
                   </a>
                 </div>
               </GlassCard>
@@ -850,16 +1062,41 @@ export default function Home() {
                   </table>
                 </div>
               </GlassCard>
+
+              {/* EXECUTIVE BENCH SECTION */}
+              {insight?.metadata?.raw_research_dump?.extended_profile?.officers && (
+                <div className="mt-8">
+                  <ExecutiveBench
+                    officers={insight.metadata.raw_research_dump.extended_profile.officers}
+                    isIndian={isIndian}
+                  />
+                </div>
+              )}
             </div>
             {/* RAW RESEARCH DUMP (FOR DEBUGGING/HIDDEN DATA) */}
             <div className="mt-12 pt-12 border-t border-white/5 opacity-40 hover:opacity-100 transition-opacity">
               <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-3">
-                <Zap className="w-3 h-3" /> Raw Research Engine Dump (Legacy/Internal)
+                <Zap className="w-3 h-3" /> Raw Research Engine Dump
               </h2>
               <GlassCard className="p-0 border-white/5 bg-black/20 overflow-hidden">
                 <div className="p-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
-                  <span className="text-[9px] font-mono text-slate-500">SYSTEM_RESEARCH_LOG_v2.5</span>
-                  <span className="text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest animate-pulse">Live Link Active</span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[9px] font-mono text-slate-500">SYSTEM_RESEARCH_LOG_v2.5</span>
+                    <span className="text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest animate-pulse">Live Link Active</span>
+                  </div>
+                  <button
+                    onClick={copyRawDump}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/5 group/copy"
+                  >
+                    {copied ? (
+                      <Check className="w-3 h-3 text-emerald-400" />
+                    ) : (
+                      <Copy className="w-3 h-3 group-hover/copy:scale-110 transition-transform" />
+                    )}
+                    <span className="text-[9px] font-bold uppercase tracking-widest">
+                      {copied ? "Copied" : "Copy Dump"}
+                    </span>
+                  </button>
                 </div>
                 <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar">
                   <pre className="text-[10px] font-mono leading-relaxed text-slate-500 whitespace-pre-wrap">

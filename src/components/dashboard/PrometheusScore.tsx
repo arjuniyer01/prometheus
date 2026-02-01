@@ -20,6 +20,7 @@ const WeightKnob = ({ label, value, color, onChange }: { label: string, value: n
         sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
         purple: 'text-purple-400 bg-purple-500/10 border-purple-500/20',
         rose: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+        orange: 'text-orange-400 bg-orange-500/10 border-orange-500/20',
     };
 
     const barColorMap: Record<string, string> = {
@@ -28,6 +29,7 @@ const WeightKnob = ({ label, value, color, onChange }: { label: string, value: n
         sky: 'bg-sky-500/40',
         purple: 'bg-purple-500/40',
         rose: 'bg-rose-500/40',
+        orange: 'bg-orange-500/40',
     };
 
     return (
@@ -66,15 +68,30 @@ const WeightKnob = ({ label, value, color, onChange }: { label: string, value: n
 
 export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
     const [isExpanded, setIsExpanded] = useState(false);
-    const [weights, setWeights] = useState({ financial: 30, sec: 20, sentiment: 15, trend: 15, sector: 20 });
+    const [weights, setWeights] = useState({ financial: 25, sec: 15, sentiment: 15, trend: 15, sector: 15, institutional: 15 });
+
+    // Handle initial weight distribution for India
+    useState(() => {
+        if (metadata?.currency === 'INR') {
+            setWeights({
+                financial: 30,
+                sec: 0,
+                sentiment: 15,
+                trend: 15,
+                sector: 20,
+                institutional: 20
+            });
+        }
+    });
 
     if (!metadata?.prometheus_score) return null;
 
-    const breakdown = metadata.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0 };
+    const breakdown = metadata.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0, institutional_score: 0 };
     const drivers = metadata.financial_score_drivers || [];
     const finSubscores = metadata.financial_subscores || { profitability: 0, growth: 0, solvency: 0 };
     const trendSubscores = metadata.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 };
     const sectorSubscores = metadata.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 };
+    const institutionalSubscores = metadata.institutional_subscores || { analyst_conviction: 0, insider_signal: 0, earnings_reliability: 0 };
 
     const adjustWeights = (category: keyof typeof weights, val: number) => {
         const remaining = 100 - val;
@@ -101,13 +118,14 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
         setWeights(newWeights);
     };
 
-    const totalWeight = weights.financial + weights.sec + weights.sentiment + weights.trend + weights.sector;
+    const totalWeight = weights.financial + weights.sec + weights.sentiment + weights.trend + weights.sector + weights.institutional;
     const computedScore = Math.round(
         ((breakdown.financial_score * weights.financial) +
             (breakdown.sec_score * weights.sec) +
             (breakdown.sentiment_score * weights.sentiment) +
             (breakdown.trend_score * weights.trend) +
-            ((breakdown.sector_score || 0) * weights.sector)) / totalWeight
+            ((breakdown.sector_score || 0) * weights.sector) +
+            ((breakdown.institutional_score || 0) * weights.institutional)) / totalWeight
     );
 
     return (
@@ -172,18 +190,22 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     </Tooltip>
                                     <span className="text-slate-500">)</span>
                                 </span>
-                                <span className="mx-1 text-slate-600">+</span>
-                                <span className="inline-flex items-center whitespace-nowrap">
-                                    <span className="text-slate-500">(</span>{weights.sec}% ×
-                                    <Tooltip>
-                                        <TooltipTrigger className="mx-1 text-amber-400 underline decoration-amber-500/30 underline-offset-4">Regl</TooltipTrigger>
-                                        <TooltipContent className="bg-slate-900 border-amber-500/20 text-xs">
-                                            <div className="font-bold border-b border-white/10 pb-1 mb-1">Regulatory Score: {breakdown.sec_score}</div>
-                                            <p className="w-32">Risk analysis of recent SEC filings and corporate actions.</p>
-                                        </TooltipContent>
-                                    </Tooltip>
-                                    <span className="text-slate-500">)</span>
-                                </span>
+                                {metadata?.currency !== 'INR' && (
+                                    <>
+                                        <span className="mx-1 text-slate-600">+</span>
+                                        <span className="inline-flex items-center whitespace-nowrap">
+                                            <span className="text-slate-500">(</span>{weights.sec}% ×
+                                            <Tooltip>
+                                                <TooltipTrigger className="mx-1 text-amber-400 underline decoration-amber-500/30 underline-offset-4">Regl</TooltipTrigger>
+                                                <TooltipContent className="bg-slate-900 border-amber-500/20 text-xs">
+                                                    <div className="font-bold border-b border-white/10 pb-1 mb-1">Regulatory Score: {breakdown.sec_score}</div>
+                                                    <p className="w-32">Risk analysis of recent SEC filings and corporate actions.</p>
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <span className="text-slate-500">)</span>
+                                        </span>
+                                    </>
+                                )}
                                 <span className="mx-1 text-slate-600">+</span>
                                 <span className="inline-flex items-center whitespace-nowrap">
                                     <span className="text-slate-500">(</span>{weights.sentiment}% ×
@@ -223,20 +245,40 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     </Tooltip>
                                     <span className="text-slate-500">)</span>
                                 </span>
+                                <span className="mx-1 text-slate-600">+</span>
+                                <span className="inline-flex items-center whitespace-nowrap">
+                                    <span className="text-slate-500">(</span>{weights.institutional}% ×
+                                    <Tooltip>
+                                        <TooltipTrigger className="mx-1 text-orange-400 underline decoration-orange-500/30 underline-offset-4">Intel</TooltipTrigger>
+                                        <TooltipContent className="bg-slate-900 border-orange-500/20 text-xs space-y-1">
+                                            <div className="font-bold border-b border-white/10 pb-1 mb-1">Institutional Score: {breakdown.institutional_score}</div>
+                                            <div className="flex justify-between gap-4"><span>Analysts:</span> <span>{institutionalSubscores.analyst_conviction}</span></div>
+                                            <div className="flex justify-between gap-4"><span>Insiders:</span> <span>{institutionalSubscores.insider_signal}</span></div>
+                                            <div className="flex justify-between gap-4"><span>Surprises:</span> <span>{institutionalSubscores.earnings_reliability}</span></div>
+                                        </TooltipContent>
+                                    </Tooltip>
+                                    <span className="text-slate-500">)</span>
+                                </span>
                             </p>
 
                             <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-white bg-black/20 p-2 rounded-lg border border-white/5">
                                 <span className="text-indigo-300">{computedScore}</span>
                                 <span className="text-slate-600">=</span>
                                 <span className="text-emerald-300/80">({(breakdown.financial_score * weights.financial / 100).toFixed(1)})</span>
-                                <span className="text-slate-600">+</span>
-                                <span className="text-amber-300/80">({(breakdown.sec_score * weights.sec / 100).toFixed(1)})</span>
+                                {metadata?.currency !== 'INR' && (
+                                    <>
+                                        <span className="text-slate-600">+</span>
+                                        <span className="text-amber-300/80">({(breakdown.sec_score * weights.sec / 100).toFixed(1)})</span>
+                                    </>
+                                )}
                                 <span className="text-slate-600">+</span>
                                 <span className="text-sky-300/80">({(breakdown.sentiment_score * weights.sentiment / 100).toFixed(1)})</span>
                                 <span className="text-slate-600">+</span>
                                 <span className="text-purple-300/80">({(breakdown.trend_score * weights.trend / 100).toFixed(1)})</span>
                                 <span className="text-slate-600">+</span>
                                 <span className="text-rose-300/80">({((breakdown.sector_score || 0) * weights.sector / 100).toFixed(1)})</span>
+                                <span className="text-slate-600">+</span>
+                                <span className="text-orange-300/80">({((breakdown.institutional_score || 0) * weights.institutional / 100).toFixed(1)})</span>
                             </div>
                         </div>
 
@@ -247,9 +289,9 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                 </h5>
                                 <div className="flex gap-2">
                                     {[
-                                        { label: 'Bal', w: { financial: 20, sec: 20, sentiment: 20, trend: 20, sector: 20 } },
-                                        { label: 'Value', w: { financial: 40, sec: 20, sentiment: 10, trend: 10, sector: 20 } },
-                                        { label: 'Sector', w: { financial: 15, sec: 15, sentiment: 10, trend: 10, sector: 50 } },
+                                        { label: 'Bal', w: { financial: 20, sec: 15, sentiment: 15, trend: 15, sector: 15, institutional: 20 } },
+                                        { label: 'Value', w: { financial: 40, sec: 15, sentiment: 5, trend: 10, sector: 15, institutional: 15 } },
+                                        { label: 'Intel', w: { financial: 10, sec: 10, sentiment: 10, trend: 10, sector: 10, institutional: 50 } },
                                     ].map((preset) => (
                                         <button
                                             key={preset.label}
@@ -264,10 +306,13 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
 
                             <div className="grid grid-cols-1 gap-2">
                                 <WeightKnob label="Financials" value={weights.financial} color="emerald" onChange={(v) => adjustWeights('financial', v)} />
-                                <WeightKnob label="Regulatory" value={weights.sec} color="amber" onChange={(v) => adjustWeights('sec', v)} />
+                                {metadata?.currency !== 'INR' && (
+                                    <WeightKnob label="Regulatory" value={weights.sec} color="amber" onChange={(v) => adjustWeights('sec', v)} />
+                                )}
                                 <WeightKnob label="Sentiment" value={weights.sentiment} color="sky" onChange={(v) => adjustWeights('sentiment', v)} />
                                 <WeightKnob label="Momentum" value={weights.trend} color="purple" onChange={(v) => adjustWeights('trend', v)} />
                                 <WeightKnob label="Sector" value={weights.sector} color="rose" onChange={(v) => adjustWeights('sector', v)} />
+                                <WeightKnob label="Intelligence" value={weights.institutional} color="orange" onChange={(v) => adjustWeights('institutional', v)} />
                             </div>
                         </div>
                     </div>

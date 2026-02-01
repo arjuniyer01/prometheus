@@ -100,14 +100,11 @@ export const analyzeTicker = inngest.createFunction(
         });
 
         const secData = await step.run("fetch-sec-data", async () => {
-            console.log(`Fetching SEC data for ${ticker} (CIK: ${data.profile.cik})...`);
-            const [sec, profile] = await Promise.all([
-                getSECSubmissions(data.profile.cik),
-                getSECProfile(ticker)
-            ]);
+            console.log(`Fetching SEC data for ${ticker} via Yahoo...`);
+            const filings = await getSECSubmissions(ticker);
             return {
-                submissions: sec && 'recent' in sec ? sec : null,
-                profile
+                submissions: filings && filings.length > 0 ? filings : null,
+                profile: null
             };
         });
 
@@ -155,14 +152,20 @@ export const analyzeTicker = inngest.createFunction(
            - Analyze sector seasonality (e.g., is this sector historically strong or weak this time of year?). Use ${today} to determine the current season.
            - Identify sector rotation signals (is capital moving into or out of ${data.profile.sector}?).
         
-        6. OPINIONATED ANALYSIS: Do not be overly cautious. Act like a hedge fund analyst. If a metric is strong compared to peers or history, mark it "positive". If it's a risk, mark it "negative". Avoid "neutral" unless it's truly unremarkable.
-        7. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the sectorData snapshots, provide a representative score (0-100).
+        6. INSTITUTIONAL INTELLIGENCE: 
+           - Analyze the Analyst Recommendations trend. Is consensus moving toward Buy or Hold?
+           - Analyze Insider Transactions. Is there notable net selling by top executives?
+           - Analyze Earnings History. Has the company consistently beaten estimates?
+        
+        7. OPINIONATED ANALYSIS: Do not be overly cautious. Act like a hedge fund analyst. If a metric is strong compared to peers or history, mark it "positive". If it's a risk, mark it "negative". Avoid "neutral" unless it's truly unremarkable.
+        8. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the sectorData snapshots, provide a representative score (0-100).
         
         DATA:
         Profile: ${JSON.stringify(data.profile)}
         Quote (Real-time): ${JSON.stringify(data.quote)}
         Sector Data: ${JSON.stringify(sectorData)}
         Analyst Recommendations: ${JSON.stringify(sectorData.analystRecs)}
+        Intelligence Dump (Insiders, Targets, Performance): ${JSON.stringify(sectorData.fullAnalysis)}
         Technical Indicators: SMA50=${JSON.stringify(sectorData.sma50)}, SMA200=${JSON.stringify(sectorData.sma200)}
         Key Metrics (FMP): ${JSON.stringify(data.metrics)}
         Ratios (FMP): ${JSON.stringify(data.ratios)}
@@ -172,11 +175,7 @@ export const analyzeTicker = inngest.createFunction(
         Quarterly Income (Last 5): ${JSON.stringify(data.quarterlyIncome)}
         Quarterly Balance Sheet (Last 5): ${JSON.stringify(data.quarterlyBalance)}
         SEC Profile (FMP): ${JSON.stringify(secData.profile)}
-        SEC Filings (Recent): ${secData.submissions ? JSON.stringify({
-                recent_forms: (secData.submissions as any).recent.form.slice(0, 8),
-                recent_dates: (secData.submissions as any).recent.filingDate.slice(0, 8),
-                recent_descriptions: (secData.submissions as any).recent.primaryDocDescription.slice(0, 8)
-            }) : "No SEC filing data available"}
+        SEC Filings (Recent): ${secData.submissions ? JSON.stringify(secData.submissions.slice(0, 10)) : "No SEC filing data available"}
         News Headlines: ${JSON.stringify((newsData || []).slice(0, 10).map((n: any) => ({ headline: n.headline, source: n.source })))}
         
         Output as JSON with:
@@ -186,9 +185,10 @@ export const analyzeTicker = inngest.createFunction(
         - quarterly_analysis: A 3-sentence deep dive into the last 5 quarters of performance.
         - annual_trends: A 3-sentence summary of the 5-year financial trajectory.
         - sector_analysis: A 3-sentence analysis of performance vs sector, seasonality, and rotation. (CRITICAL: Do not put this in the metrics array).
+        - institutional_analysis: A 3-sentence synthesis of analyst consensus, insider behavior, and earnings surprise consistency.
         - sentiment_summary: A 2-sentence synthesis of headlines.
         - sentiment_score: 0-100
-        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score }
+        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score, institutional_score }
         - financial_subscores: { profitability, growth, solvency }
         - trend_subscores: { 
             quarterly_momentum: 0-100, 
@@ -199,9 +199,14 @@ export const analyzeTicker = inngest.createFunction(
             seasonality_strength: 0-100,
             rotation_inflow: 0-100
           }
+        - institutional_subscores: {
+            analyst_conviction: 0-100,
+            insider_signal: 0-100,
+            earnings_reliability: 0-100
+          }
         - financial_formula: A short string explaining the weighted score formula.
         - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
-        - prometheus_score: (0.3 * financial_score) + (0.2 * sec_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.2 * sector_score)
+        - prometheus_score: (0.25 * financial_score) + (0.15 * sec_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.15 * sector_score) + (0.15 * institutional_score)
         - score_criteria: A short explanation of why the company got this score.
         - metrics: An array of 25-30 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. 
           REQUIRED METRICS (Exhaustive List): 
@@ -290,6 +295,7 @@ export const analyzeTicker = inngest.createFunction(
                 model_version: 'gemini-2.5-flash-lite',
                 market: 'US',
                 metadata: {
+                    currency: data.quote?.currency || 'USD',
                     cik: data.profile.cik,
                     price: data.quote?.price || data.profile.price,
                     changes: data.quote?.change || data.profile.changes,
@@ -300,17 +306,21 @@ export const analyzeTicker = inngest.createFunction(
                     quarterly_analysis: aiAnalysis.quarterly_analysis,
                     annual_trends: aiAnalysis.annual_trends,
                     sector_analysis: aiAnalysis.sector_analysis,
+                    institutional_analysis: aiAnalysis.institutional_analysis,
                     sentiment_summary: aiAnalysis.sentiment_summary,
                     sentiment_score: aiAnalysis.sentiment_score || 50,
                     prometheus_score: aiAnalysis.prometheus_score || 0,
-                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0 },
+                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0, institutional_score: 0 },
                     financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
                     trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 },
                     sector_subscores: aiAnalysis.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 },
+                    institutional_subscores: aiAnalysis.institutional_subscores || { analyst_conviction: 0, insider_signal: 0, earnings_reliability: 0 },
                     financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, regulatory risk, market sentiment, momentum, and sector intelligence",
                     financial_score_drivers: aiAnalysis.financial_score_drivers || [],
                     score_criteria: aiAnalysis.score_criteria || "Score pending analysis depth.",
-                    last_sec_filing: (secData.submissions as any)?.recent?.form?.[0] || 'N/A',
+                    last_sec_filing: (secData.submissions as any)?.[0]
+                        ? `${(secData.submissions as any)[0].type} (${(secData.submissions as any)[0].date})`
+                        : 'N/A',
                     top_headlines: (newsData || []).slice(0, 3).map((n: any) => ({
                         headline: n.headline,
                         url: n.url,

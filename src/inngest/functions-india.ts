@@ -17,6 +17,7 @@ import {
     getFullAnalysisIndia,
     getSustainabilityIndia
 } from "@/lib/scrapers-india";
+import { getNSEAnnouncements } from "@/lib/news-rss";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 
 /**
@@ -202,7 +203,11 @@ export const analyzeTickerIndia = inngest.createFunction(
 
         await step.sleep("wait-2", "1s");
         const corporateActions = await step.run("fetch-corporate-actions", async () => {
-            return await getCorporateActionsIndia(ticker);
+            const [actions, nseAnnouncements] = await Promise.all([
+                getCorporateActionsIndia(ticker),
+                getNSEAnnouncements(ticker)
+            ]);
+            return { actions, nseAnnouncements };
         });
 
         await step.sleep("wait-3", "1s");
@@ -276,15 +281,20 @@ export const analyzeTickerIndia = inngest.createFunction(
         CRITICAL INSTRUCTIONS (INDIAN CONTEXT):
         1. TERMINOLOGY: Use Indian financial terminology (Crores, Lakhs). 1 Crore = 10,000,000; 1 Lakh = 100,000.
         2. STANDALONE vs CONSOLIDATED: Differentiate if provided. Usually Consolidated is preferred for group health.
-        3. REGULATORY SEARCH: Since there is no direct EDGAR equivalent, synthesize the provided "Corporate Actions" and "News" to act as the regulatory pulse.
+        3. REGULATORY SEARCH: Use the provided "Corporate Actions" and "NSE Announcements" to act as the regulatory pulse. Analyze for significant insider moves, board meetings, or regulatory warnings.
         4. FINANCIAL TRENDS: Analyze the P&L and Balance Sheet trends specifically for the Indian market context (high growth, inflationary environment, sector-specific tailwinds like Digital India).
         5. SECTOR INTELLIGENCE (INDIA): 
            - Analyze the stock within its sector: ${data.profile.sector}.
            - Consider seasonality specific to the Indian market (e.g., Monsoon impact for Auto/Agri, Festive season for Retail/Durables, Q3/Q4 festive demand). Use ${today} to determine the current season.
            - Identify sector rotation trends in the Indian indices. Use the "Sector Intelligence" data (Trending/Most Active) to see if capital is flowing into this industry.
         
-        6. OPINIONATED ANALYSIS: Do not be overly cautious. Act like an institutional equity research analyst. If a metric is strong compared to Nifty peers or historical trends (like superior PE conversion or ROE), mark it "positive". If it's a structural risk (high debt-to-equity, margin pressure), mark it "negative". Avoid "neutral" unless it's truly unremarkable.
-        7. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the indexHistory, provide a representative score (0-100).
+        6. INSTITUTIONAL INTELLIGENCE (INDIA): 
+           - Analyze the Analyst Recommendations trend from Yahoo Finance data. Is consensus moving toward Buy or Hold in the Indian context?
+           - Analyze Insider Transactions (if available). Is there notable net selling in the Indian markets?
+           - Analyze Earnings History. Has the company consistently beaten estimates on the NSE/BSE?
+        
+        7. OPINIONATED ANALYSIS: Do not be overly cautious. Act like an institutional equity research analyst. If a metric is strong compared to Nifty peers or historical trends (like superior PE conversion or ROE), mark it "positive". If it's a structural risk (high debt-to-equity, margin pressure), mark it "negative". Avoid "neutral" unless it's truly unremarkable.
+        8. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the indexHistory, provide a representative score (0-100).
         
         DATA:
         Profile: ${JSON.stringify(data.profile)}
@@ -295,6 +305,7 @@ export const analyzeTickerIndia = inngest.createFunction(
         Recent Announcements: ${JSON.stringify(data.announcements)}
         Corporate Actions: ${JSON.stringify(data.corporateActions)}
         Sector Intelligence (Market Momentum): ${JSON.stringify(data.sectorData)}
+        Institutional Data (Analyst Recs, Insiders, Earnings): ${JSON.stringify(data.extraData.fullAnalysis)}
         News Headlines: ${JSON.stringify((data.news || []).slice(0, 15).map((n: any) => ({ headline: n.title, source: n.source, snippet: n.snippet })))}
         
         Output as JSON with:
@@ -304,9 +315,10 @@ export const analyzeTickerIndia = inngest.createFunction(
         - quarterly_analysis: A 3-sentence deep dive into recent performance.
         - annual_trends: A 3-sentence summary of the financial trajectory.
         - sector_analysis: A 3-sentence analysis of performance vs sector, Indian specific seasonality, and rotation trends. (CRITICAL: Do not put this in the metrics array).
+        - institutional_analysis: A 3-sentence synthesis of analyst consensus, insider behavior, and earnings surprise consistency.
         - sentiment_summary: A 2-sentence synthesis of headlines.
         - sentiment_score: 0-100
-        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score }
+        - score_breakdown: { financial_score, sentiment_score, trend_score, sector_score, institutional_score }
         - financial_subscores: { profitability, growth, solvency }
         - trend_subscores: { 
             quarterly_momentum: 0-100, 
@@ -317,9 +329,14 @@ export const analyzeTickerIndia = inngest.createFunction(
             seasonality_strength: 0-100,
             rotation_inflow: 0-100
           }
+        - institutional_subscores: {
+            analyst_conviction: 0-100,
+            insider_signal: 0-100,
+            earnings_reliability: 0-100
+          }
         - financial_formula: A short string explaining the weighted score formula.
         - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
-        - prometheus_score: (0.3 * financial_score) + (0.2 * sec_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.2 * sector_score)
+        - prometheus_score: (0.30 * financial_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.20 * sector_score) + (0.20 * institutional_score)
         - score_criteria: A short explanation of why the company got this score.
         - metrics: An array of 25-30 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. 
           REQUIRED METRICS (Exhaustive List): 
@@ -443,16 +460,19 @@ export const analyzeTickerIndia = inngest.createFunction(
                     quarterly_analysis: aiAnalysis.quarterly_analysis || aiAnalysis.quarterly_analysis_summary || "Recent quarterly trajectory synthesis pending...",
                     annual_trends: aiAnalysis.annual_trends || aiAnalysis.annual_summary || "Long-term annual transformation synthesis pending...",
                     sector_analysis: aiAnalysis.sector_analysis || "Sector intelligence pending...",
+                    institutional_analysis: aiAnalysis.institutional_analysis || "Institutional data currently being synthesized...",
+                    last_sec_filing: (data.corporateActions?.nseAnnouncements as any)?.[0]?.title || 'N/A',
                     sentiment_summary: aiAnalysis.sentiment_summary || "Headline sentiment tracking initiated...",
                     sentiment_score: aiAnalysis.sentiment_score || 50,
                     prometheus_score: aiAnalysis.prometheus_score || 0,
-                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0 },
+                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0, institutional_score: 0 },
                     score_criteria: aiAnalysis.score_criteria || "Multidimensional synthesis of fundamental and market signals.",
                     financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
                     trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 },
                     sector_subscores: aiAnalysis.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 },
+                    institutional_subscores: aiAnalysis.institutional_subscores || { analyst_conviction: 0, insider_signal: 0, earnings_reliability: 0 },
                     financial_score_drivers: aiAnalysis.financial_score_drivers || [],
-                    financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, regulatory risk, and sector context",
+                    financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, sentiment, momentum, sector, and institutional signals",
                     top_headlines: (data.news || []).slice(0, 3).map((n: any) => ({
                         headline: n.title || n.headline,
                         url: n.url,

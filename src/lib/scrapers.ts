@@ -12,7 +12,8 @@ import {
     getYahooRecommendations,
     getYahooCashFlow,
     getYahooAnalysis,
-    getYahooSustainability
+    getYahooSustainability,
+    getYahooSECFilings
 } from './yahoo-finance';
 
 /**
@@ -107,20 +108,26 @@ export async function getFinnhubFinancials(symbol: string) {
     return getYahooMetrics(symbol);
 }
 
+import { getAggregatedNews } from './news-rss';
+
 export async function getFMPNews(symbol: string) {
-    return getYahooNews(symbol);
+    return getAggregatedNews(symbol);
 }
 
 export async function getNews(symbol: string) {
-    return getYahooNews(symbol);
+    return getAggregatedNews(symbol);
 }
 
 /**
  * Fetch SEC Submissions (10-K, 10-Q, 8-K) for a given CIK.
  */
-export async function getSECSubmissions(cik: string) {
-    // SEC data is harder via Yahoo, keeping it null for now
-    return null;
+export async function getSECSubmissions(symbol: string) {
+    try {
+        return await getYahooSECFilings(symbol);
+    } catch (error) {
+        console.error(`SEC submissions fetch failed for ${symbol}:`, error);
+        return [];
+    }
 }
 
 /**

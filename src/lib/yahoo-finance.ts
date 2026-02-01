@@ -45,6 +45,7 @@ export async function getYahooQuote(symbol: string) {
             avgVolume: quote.averageDailyVolume3Month,
             pe: quote.trailingPE,
             eps: quote.trailingEps,
+            currency: quote.currency,
             timestamp: quote.regularMarketTime ? new Date(quote.regularMarketTime).getTime() / 1000 : Math.floor(Date.now() / 1000)
         };
     } catch (error) {
@@ -260,7 +261,8 @@ export async function getYahooAnalysis(symbol: string) {
                 'insiderTransactions',
                 'calendarEvents',
                 'indexTrend',
-                'earningsTrend'
+                'earningsTrend',
+                'secFilings'
             ]
         });
 
@@ -271,11 +273,23 @@ export async function getYahooAnalysis(symbol: string) {
             insiders: summary.insiderTransactions?.transactions || [],
             calendar: summary.calendarEvents || {},
             indexTrend: summary.indexTrend || {},
-            earningsTrend: summary.earningsTrend?.trend || []
+            earningsTrend: summary.earningsTrend?.trend || [],
+            secFilings: summary.secFilings?.filings || []
         };
     } catch (error) {
         console.error(`Yahoo Finance analysis failed for ${symbol}:`, error);
-        return {};
+    }
+}
+
+export async function getYahooSECFilings(symbol: string) {
+    try {
+        const summary = await yahooFinance.quoteSummary(symbol, {
+            modules: ['secFilings']
+        });
+        return summary.secFilings?.filings || [];
+    } catch (error) {
+        console.error(`Yahoo Finance SEC filings failed for ${symbol}:`, error);
+        return [];
     }
 }
 
