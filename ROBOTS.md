@@ -2,58 +2,115 @@
 
 ## Project: Prometheus Financial Intelligence Platform
 
-### Context
-Prometheus is a high-performance financial intelligence platform designed to democratize institutional-grade analysis using Gemini 2.5 Flash Lite, Supabase, and Next.js.
+### 1. System Overview & Architecture
+Prometheus is a high-performance, institutional-grade financial intelligence terminal. It is designed to act as an AI-powered Senior Equity Analyst, capable of synthesizing vast amounts of raw market data into actionable "Alpha" (narratives, valuations, and risks).
 
-### Tech Stack
-- **Frontend**: Next.js 15 (App Router), Tailwind CSS v4, Lucide React, Recharts.
-- **Backend**: Supabase (Postgres, Realtime, Auth), Inngest (Serverless Workflows).
-- **AI**: Google Gemini 2.5 Flash Lite (Structured Output).
-- **Data**: Yahoo Finance (Primary for Financials, News, and SEC Filings). RSS Feeds for live sentiment. FMP, Finnhub, and IndianAPI.in are legacy/fallback only.
+**Core Data Flow:**
+1.  **Trigger**: User requests analysis for a ticker (e.g., `AAPL` or `RELIANCE.NS`).
+2.  **Orchestration**: Next.js API endpoint pushes the job to **Inngest** (Serverless Queue).
+3.  **Data Acquisition**:
+    *   **Financials**: `yahoo-finance2` fetches 9+ distinct modules (Income, Balance, Cash, Estimations, etc.).
+    *   **Sentiment**: Live RSS aggregation from Google News & Yahoo Finance feeds.
+    *   **Market Data**: Real-time prices via Yahoo Finance quote endpoint.
+4.  **Synthesis**: **Gemini 2.5 Flash Lite** processes the structured JSON dump. It uses "Chain of Thought" reasoning to produce a comprehensive report.
+5.  **Persistence**: The resulting JSON and Markdown report are stored in **Supabase** (Postgres).
+6.  **Delivery**: **Supabase Realtime** pushes updates to the client in milliseconds.
 
-### Development Rules & Lessons Learned
-1. **Design System**: Use the Institutional Monochrome palette (Silver/Slate/Black). Sectional color accents are reserved for data categorization: Amber for SEC Regulatory data, Sky Blue for Market Pulse/Sentiment, and Emerald/Red for bull/bear cases.
-2. **Layout**: Prioritize a fluid edge-to-edge layout (max-width: 1920px) to support modern browser configurations like vertical tabs.
-3. **Yahoo Finance Migration**: **CRITICAL**: The platform has fully migrated to Yahoo Finance for both US and Indian markets.
-    - **Symbol Handling**: All Indian stocks MUST include the `.NS` (NSE) or `.BO` (BSE) suffix when calling the library. US stocks use standard uppercase symbols.
-    - **Module Usage**: Leverage `quoteSummary` with modules: `assetProfile`, `price`, `summaryDetail`, `defaultKeyStatistics`, `financialData`, `earningsTrend`, `indexTrend`, `majorHoldersBreakdown`, `insiderTransactions`.
-    - **Historical Data**: Use `yahooFinance.historical` with explicit `period1` and `period2` Date objects.
-    - **News**: **CRITICAL**: Switched from `yahooFinance.search` headlines to a dual **RSS-based Live Aggregator** (Google News + Yahoo Finance RSS).
-        - **Precision**: Use `ticker:SYMBOL` syntax for Google News RSS to minimize headline noise.
-        - **Latency**: Fetched live via `/api/news/[symbol]` to bypass CORS and ensure real-time hydration without database stale-datedness.
-        - **Deduplication**: Multi-source feeds are merged and deduplicated by URL/Title in `src/lib/news-rss.ts`.
-4. **Data Stewardship**: Always fetch and persist the `raw_research_dump` in `ai_insights.metadata`. This includes unmapped data like Cash Flow statements, ESG scores (when available), and detailed insider logs for future UI expansion.
-5. **Realtime UX**: Use Supabase Realtime for instant UI updates. Display "Synthesizing" states clearly to manage user expectations during AI generation.
-6. **Rate Limiting**: Yahoo Finance is generally permissive for reasonable polling intervals. Avoid aggressive loops without delay. For SEC EDGAR, maintain < 10 req/s with a professional User-Agent header.
-7. **Validation**: Maintain the integration testing suite in `scripts/test-yahoo.ts`. Run `npm run test:yahoo` after modifying data fetching logic to ensure cross-market parity.
-8. **Build Safety**: Provide fallbacks for environment variables (e.g., `process.env.SUPABASE_URL || ''`) to prevent build-time crashes during Vercel's static analysis.
-9. **Legacy APIs (FMP/Finnhub/IndianAPI)**: These are preserved in `scrapers.ts` and `scrapers-india.ts` as commented-out reference code. DO NOT re-enable them unless Yahoo Finance is completely deprecated or unreachable.
-10. **Metric Consistency**: **CRITICAL**: Reports must display an exhaustive set of metrics including PE, Forward PE, Debt-to-Equity, Net Margin, and ROE.
-    - **Historical Parity**: Both US and Indian financial tables MUST include Gross Margin, Net Margin, and EPS columns, calculated from Yahoo Finance statement dumps.
-11. **Analyst Intelligence**: Use the `recommendationTrend` and `earningsHistory` modules from Yahoo Finance to proxy institutional sentiment.
-12. **Indian Market Parity**: Ensure `functions-india.ts` maintains 100% logic parity with US workflows. Recent fix: Institutional Intelligence (Insiders/Analysts) was missing and is now integrated into the Indian AI prompt and persistence layer.
-13. **RSS Parser Integration**: Use `rss-parser` for consistent XML transformation. Always provide a snippet fallback from the `title` or `contentSnippet` if the description is missing.
+### 2. Technology Stack
+*   **Frontend Framework**: Next.js 15 (App Router).
+*   **Styling**: Tailwind CSS v4.
+    *   *Design System*: "Institutional Monochrome" (Slate/Zinc/Black).
+    *   *Utilities*: `lucide-react` (Icons), `clsx`/`tailwind-merge` (Class management).
+*   **Visualization**: Recharts (Customized for High-Frequency Trading aesthetics).
+*   **Backend Services**:
+    *   **Database**: Supabase (PostgreSQL with RLS policies).
+    *   **Queue/Jobs**: Inngest (Reliable serverless function orchestration).
+    *   **AI Model**: Google Gemini 2.5 Flash Lite (via Vercel AI SDK or Google Generative AI).
+*   **Data Providers**:
+    *   **Primary**: Yahoo Finance (`yahoo-finance2` library).
+    *   **News**: Custom RSS Aggregator (`rss-parser`).
+    *   **Legacy/Fallback**: Financial Modeling Prep (FMP), Finnhub, IndianAPI.in (Code exists but is dormant).
 
-### Sector Analysis Logic
-- **Benchmarks**: Use `^GSPC` (S&P 500) or `^NSEI` (Nifty 50) as primary benchmarks for relative strength analysis.
-- **Seasonality**: Derive from 5-year historical price actions fetched via YF.
-- **Rotation**: Proxy rotation signals by comparing sectoral indices (e.g., `^CNXIT` for India IT) against broader market movement.
+### 3. Development Rules & "The Prometheus Way"
 
-### Completed Tasks
-- [x] Institutional Monochrome UI Overhaul.
-- [x] Unified US/India Market Dashboard architecture via Yahoo Finance.
-- [x] **[NEW] Comprehensive Yahoo Finance Integration**: All data categories (Income, Balance, Cash Flow, Estimates, Insider Trades) integrated.
-- [x] **[NEW] Raw Research Dump**: Implemented persistent logging and a "System Dump" UI for advanced financial data.
-- [x] **[FIX] API Migration**: Successfully replaced FMP, Finnhub, and IndianAPI.in with a unified Yahoo Finance backend.
-- [x] **[NEW] Integration Test Suite**: Added `npm run test:yahoo` for validating multi-market data health.
-- [x] **[NEW] Institutional Intelligence**: Mapped `raw_research_dump` fields (Analysts, Insiders, Earnings history) to premium dashboard widgets and integrated into the scoring engine (US & INDIA).
-- [x] **[FIX] Live News Aggregator**: Implemented a real-time RSS engine (Google + Yahoo) with a scrollable UI and Next.js API proxy to replace limited library news.
-- [x] **[FIX] Indian Market Parity**: Retrofitted `functions-india.ts` with Institutional Intelligence and Sector Rotation analysis.
+#### A. Design Philosophy: "The Terminal Aesthetic"
+*   **Visual Language**: The UI must resemble a Bloomberg Terminal or FactSet workstation.
+    *   Use **Jet Black** (`bg-slate-950`) backgrounds.
+    *   Use **1px borders** (`border-white/10`) for separation.
+    *   **Typography**: `Geist Mono` or standard Monospace for numbers. `Inter/Geist Sans` for narrative text.
+    *   **Color Semantics**:
+        *   **Emerald (#10b981)**: Bullish/Positive/Profit.
+        *   **Rose (#f43f5e)**: Bearish/Negative/Loss.
+        *   **Amber (#f59e0b)**: Warning/Regulatory/Hold.
+        *   **Indigo (#6366f1)**: Analysis/Neural/AI Actions.
+        *   **Sky (#0ea5e9)**: Market Pulse/News/Sentiment.
 
-### Pending Tasks
-- [ ] Map `raw_research_dump` fields to dedicated UI widgets (e.g., Insider Trades timeline, ESG meter).
-- [ ] Fix specific financial statement key mapping (Total Assets / Operating Cash Flow) for newer YF schema versions.
-- [ ] Implement PDF export for "Prometheus Briefings".
-- [ ] Integrate deeper fundamental analysis (DCF models).
-- [ ] Expand Social Sentiment to include Reddit/X via specialized scrapers.
-- [ ] Historical Comparison: Compare current synthesis vs. 3 months ago.
+#### B. The Yahoo Finance Migration (Critical Protocol)
+We have standardized on Yahoo Finance to support global markets (US & India) with a single API surface.
+*   **Symbol Normalization**:
+    *   **US**: `AAPL`, `MSFT`.
+    *   **India**: Must append suffix. `RELIANCE.NS` (NSE) is preferred over `.BO` (BSE) for liquidity.
+*   **Data Fetching Strategy**:
+    *   Use `quoteSummary` with the following modules for a complete picture:
+        *   `assetProfile` (Business summary, sector).
+        *   `financialData` (Target price, margins).
+        *   `defaultKeyStatistics` (Enterprise Value, PEG, Beta).
+        *   `indexTrend` (PE ratios, estimates).
+        *   `earningsTrend` (Growth estimates).
+        *   `insiderTransactions` (Management faith).
+        *   `recommendationTrend` (Analyst buy/sell ratings).
+*   **Testing**: ALWAYS run `npm run test:yahoo` after touching `functions.ts` or `scrapers.ts`. This script validates specific tickers to ensure no regression in data shape.
+
+#### C. High-Fidelity Charting Engine (Recharts Deep Dive)
+We use a highly customized implementation of Recharts to achieve financial-grade visualization.
+1.  **The "DataRange" Pattern**:
+    *   Recharts `Bar` component expects a single value.
+    *   We pass `[min(open, close), max(open, close)]` as the `dataKey="bodyRange"`.
+    *   This forces Recharts to calculate the `y` and `height` props corresponding exactly to the candle body, bypassing complex axis scaling arithmetic.
+2.  **Self-Contained Candle Component**:
+    *   The proprietary `Candle` component (`src/app/page.tsx`) uses a **Reverse-Engineering Scale** technique.
+    *   It calculates the "Pixels-Per-Dollar" ratio internally: `ratio = props.height / Math.abs(open - close)`.
+    *   It uses this ratio to draw the `High` and `Low` wicks relative to the body's `y` coordinate.
+    *   *Why?* This decouples the aesthetic rendering from the library's internal state, preventing "Red Dot" or "Missing Scale" errors.
+3.  **Interaction Guidelines**:
+    *   **Zooms**: Managed via a styled `<Brush>` component (Height: 30px, Handle: 15px).
+    *   **Tooltips**: Use 3-decimal precision (`.toFixed(3)`) for all tooltip metrics.
+    *   **Controls**: dedicated "Chart Analysis" button for expanding the view; do not use hover-overlay icons.
+
+#### D. News & Sentiment Aggregation
+We do not rely on standard API news endpoints (often delayed or limited).
+*   **Dual-Pipe RSS**: We aggregate RSS feeds from:
+    1.  **Google News**: `https://news.google.com/rss/search?q=ticker:{SYMBOL}` (High relevance).
+    2.  **Yahoo Finance**: `https://feeds.finance.yahoo.com/rss/2.0/headline?s={SYMBOL}` (High speed).
+*   **Deduplication**: The `news-rss.ts` utility merges these streams, filtering out duplicates based on flexible Levenshtein distance on titles or exact URL matching.
+
+### 4. Codebase Navigation
+*   `src/app/page.tsx`: The monolithic "Dashboard". Contains state management, UI composition, and chart rendering.
+*   `src/lib/functions.ts`: Core data fetching logic for US Markets.
+*   `src/lib/functions-india.ts`: Core data fetching logic for Indian Markets (maintains parity with US).
+*   `src/lib/ai-prompt.ts`: The "Brain". Contains the massive, structured prompt sent to Gemini.
+*   `src/inngest/`: Background job definitions for generating reports.
+*   `active_users.json`: Tracks user sessions (Legacy/Simple Analytics).
+
+### 5. Implementation Status Checklist
+
+#### ✅ Completed & Stable
+*   **Unified US/India Backend**: Seamless searching for `AAPL` or `TATASTEEL.NS`.
+*   **Live Charting**: Real-time price updates (polling) with Candlestick/Area toggles.
+*   **RSS News Engine**: Zero-latency news feed.
+*   **Institutional Intelligence**: Integration of "Insider Trades" and "Analyst Ratings" into the AI synthesis.
+*   **Zoom/Pan Charts**: Fully interactive historical data navigation.
+
+#### 🚧 In Progress / Roadmap
+*   **DCF Modelling**: Logic exists in `scrapers.ts` (commented out) but need a cleaner UI implementation.
+*   **PDF Export**: Users request "Download Report" functionality.
+*   **Mobile Optimization**: The "Terminal" layout needs better responsiveness for vertical mobile screens.
+*   **Historical Comparison**: Ability to "Diff" the current AI report against one generated 3 months ago.
+
+### 6. Troubleshooting
+*   **"Red Dot on Chart"**: This means the `Candle` component is receiving undefined `y` or `height` props. Ensure `dataKey="bodyRange"` is set on the generic `Bar` component logic in `page.tsx`.
+*   **"Synthesizing Forever"**: Check the Supabase `realtime` inspector. If Inngest fails silently, the UI may not receive the `completed` state. Check Vercel logs for timeout errors (Gemini taking >60s).
+*   **"Missing Data columns"**: Verify `scripts/test-yahoo.ts`. Yahoo often changes the object structure of `financialData`.
+
+---
+*Last Updated: Jan 31, 2026 - System Version 2.1 (The "Candlestick" Update)*

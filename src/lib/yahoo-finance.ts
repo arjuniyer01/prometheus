@@ -22,7 +22,7 @@ export async function getYahooHistoricalPrices(symbol: string) {
             low: quote.low,
             volume: quote.volume,
             symbol: symbol
-        })).reverse();
+        }));
     } catch (error) {
         console.error(`Yahoo Finance historical prices failed for ${symbol}:`, error);
         return [];
