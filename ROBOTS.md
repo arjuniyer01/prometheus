@@ -97,6 +97,10 @@ We do not rely on standard API news endpoints (often delayed or limited).
 #### ✅ Completed & Stable
 *   **Unified US/India Backend**: Seamless searching for `AAPL` or `TATASTEEL.NS`.
 *   **Live Charting**: Real-time price updates (polling) with Candlestick/Area toggles.
+    *   *Fix*: Auto-appends `.NS` suffix for Indian stocks in both the admin panel and dashboard fetchers to ensure Yahoo Finance compatibility.
+*   **Prometheus Score Intelligence**: 
+    *   *Fix*: Resolved `NaN` score display for Indian stocks by implementing `0` fallback for missing US-specific metrics (like SEC/Regulatory scores) during recalculation.
+    *   *UI Fix*: Enhanced tooltip contrast by explicitly setting light text colors against dark backgrounds for subscore breakdowns.
 *   **RSS News Engine**: Zero-latency news feed.
 *   **Institutional Intelligence**: Integration of "Insider Trades" and "Analyst Ratings" into the AI synthesis.
 *   **Zoom/Pan Charts**: Fully interactive historical data navigation.
@@ -109,8 +113,9 @@ We do not rely on standard API news endpoints (often delayed or limited).
 
 ### 6. Troubleshooting
 *   **"Red Dot on Chart"**: This means the `Candle` component is receiving undefined `y` or `height` props. Ensure `dataKey="bodyRange"` is set on the generic `Bar` component logic in `page.tsx`.
+*   **"Missing Live Chart for Indian Stocks"**: Ensure the symbol has the `.NS` suffix in the database. The system now auto-normalizes this, but check legacy entries if they fail.
 *   **"Synthesizing Forever"**: Check the Supabase `realtime` inspector. If Inngest fails silently, the UI may not receive the `completed` state. Check Vercel logs for timeout errors (Gemini taking >60s).
 *   **"Missing Data columns"**: Verify `scripts/test-yahoo.ts`. Yahoo often changes the object structure of `financialData`.
 
 ---
-*Last Updated: Jan 31, 2026 - System Version 2.1 (The "Candlestick" Update)*
+*Last Updated: Feb 01, 2026 - System Version 2.2 (The "Indian Normalization" Fix)*

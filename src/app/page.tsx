@@ -128,8 +128,6 @@ export default function Home() {
   const [finView, setFinView] = useState<'annual' | 'quarterly'>('annual');
   const [loading, setLoading] = useState(true);
   const [loadingPrices, setLoadingPrices] = useState(false);
-  const [liveNews, setLiveNews] = useState<any[]>([]);
-  const [loadingNews, setLoadingNews] = useState(false);
   const [copied, setCopied] = useState(false);
   const [aiQuery, setAiQuery] = useState("");
   const [isAiOpen, setIsAiOpen] = useState(false);
@@ -231,33 +229,25 @@ export default function Home() {
     if (profile) setTickerData(profile);
     if (finData) setFinancials(finData);
 
-    // Fetch live news
-    fetchLiveNews(symbol);
+    // Live news now served via cached metadata in insights
+    // fetchLiveNews(symbol);
   }, []);
 
-  const fetchLiveNews = useCallback(async (symbol: string) => {
-    setLoadingNews(true);
-    setLiveNews([]);
-    try {
-      const response = await fetch(`/api/news/${symbol}`);
-      if (response.ok) {
-        const data = await response.json();
-        setLiveNews(data);
-      }
-    } catch (error) {
-      console.error("Live news fetch failed:", error);
-    } finally {
-      setLoadingNews(false);
-    }
-  }, []);
+
 
   const fetchPrices = useCallback(async (symbol: string) => {
     setLoadingPrices(true);
     setPrices([]); // Reset prices to prevent stale chart display
     try {
+      // Normalize Indian symbol for Yahoo Historical
+      const isIndianStock = symbol.endsWith('.NS') || symbol.endsWith('.BO') || tickers.find(t => t.symbol === symbol)?.market === 'INDIA';
+      let effectiveSymbol = symbol;
+      if (isIndianStock && !symbol.includes('.')) {
+        effectiveSymbol = `${symbol}.NS`;
+      }
 
       // Fetch live from Yahoo via our API
-      const response = await fetch(`/api/stock/historical/${symbol}`);
+      const response = await fetch(`/api/stock/historical/${effectiveSymbol}`);
       if (response.ok) {
         const livePrices = await response.json();
         if (livePrices && livePrices.length > 0) {
@@ -277,7 +267,7 @@ export default function Home() {
     } finally {
       setLoadingPrices(false);
     }
-  }, []);
+  }, [tickers]);
 
   const generateContextString = useCallback(() => {
     if (!insight || !tickerData) return "";
@@ -339,7 +329,7 @@ export default function Home() {
     const formatMktCap = (val: any) => typeof val === 'number' ? formatFin(val) : val;
 
     md += `- **Current Price:** ${currency}${formatPrice(meta.price || meta.quote?.price || '---')}\n`;
-    md += `- **Change:** ${meta.changesPercentage !== undefined ? (typeof meta.changesPercentage === 'object' ? (meta.changesPercentage.NSE || meta.changesPercentage.BSE) : meta.changesPercentage) + '%' : '---'}\n`;
+    md += `- **Change:** ${meta.changesPercentage !== undefined ? (meta.changesPercentage && typeof meta.changesPercentage === 'object' ? (meta.changesPercentage.NSE || meta.changesPercentage.BSE) : meta.changesPercentage) + '%' : '---'}\n`;
     md += `- **Market Cap:** ${currency}${formatMktCap(meta.marketCap || '---')}\n`;
     md += `- **Volume:** ${meta.volume || '---'}\n`;
     md += `- **Next Earnings:** ${meta.nextEarnings || '---'}\n`;
@@ -393,10 +383,10 @@ export default function Home() {
     md += `### ${isIndian ? '🏢 Corporate Actions' : '⚖️ Regulatory Synthesis'}\n${meta.sec_analysis || "N/A"}\n\n`;
     md += `### 💬 Market Pulse & News\n${meta.sentiment_summary || "N/A"}\n\n`;
 
-    if (liveNews.length > 0) {
-      md += `#### Latest Live Headlines\n`;
-      liveNews.slice(0, 10).forEach(n => {
-        md += `- **${n.title}** (${n.source} | ${new Date(n.date).toLocaleDateString()})\n`;
+    if (meta.top_headlines && meta.top_headlines.length > 0) {
+      md += `#### Analyzed Research Headlines\n`;
+      meta.top_headlines.forEach((n: any) => {
+        md += `- **${n.headline}** (${n.source} | ${n.date ? new Date(n.date).toLocaleDateString() : 'Recent'})\n`;
       });
       md += `\n`;
     }
@@ -405,7 +395,7 @@ export default function Home() {
     md += `| Metric | Value | Status | Insight |\n`;
     md += `| :--- | :--- | :--- | :--- |\n`;
     (insight.metrics || []).forEach((m: any) => {
-      const val = typeof m.value === 'object' ? (m.value.NSE || m.value.BSE) : m.value;
+      const val = (m.value && typeof m.value === 'object') ? (m.value.NSE || m.value.BSE) : (m.value ?? '---');
       md += `| ${m.label} | ${val} | ${m.status?.toUpperCase()} | ${m.shortExplanation} |\n`;
     });
     md += `\n`;
@@ -561,7 +551,7 @@ export default function Home() {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   // Currency Helper
-  const isIndian = insight?.metadata?.currency === 'INR' || selectedSymbol?.endsWith('.NS') || selectedSymbol?.endsWith('.BO');
+  const isIndian = insight?.metadata?.currency === 'INR' || selectedSymbol?.endsWith('.NS') || selectedSymbol?.endsWith('.BO') || tickerData?.market === 'INDIA';
   const currencySymbol = isIndian ? '₹' : '$';
 
   const getRawChanges = () => {
@@ -783,7 +773,7 @@ export default function Home() {
                       </h3>
                       <div className="flex items-center gap-2">
                         <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
-                          {typeof tickerData?.exchange === 'object'
+                          {(tickerData?.exchange && typeof tickerData?.exchange === 'object')
                             ? Object.keys(tickerData.exchange).join(' / ')
                             : (tickerData?.exchange || 'MARKET')}
                         </p>
@@ -794,21 +784,21 @@ export default function Home() {
                   <div className="flex flex-col items-end gap-3">
                     <div className="text-right">
                       <div className="text-2xl font-bold font-mono text-white">
-                        {currencySymbol}{typeof insight?.metadata?.price === 'object'
+                        {currencySymbol}{(insight?.metadata?.price && typeof insight?.metadata?.price === 'object')
                           ? (insight.metadata.price.NSE || insight.metadata.price.BSE || '---')
                           : (insight?.metadata?.price || '---')}
                       </div>
 
                       {insight?.metadata?.changesPercentage !== undefined && (
                         <div className={cn("text-xs font-bold",
-                          (typeof insight.metadata.changesPercentage === 'object'
+                          (insight.metadata.changesPercentage && typeof insight.metadata.changesPercentage === 'object'
                             ? (parseFloat(insight.metadata.changesPercentage.NSE || insight.metadata.changesPercentage.BSE) || 0)
                             : insight.metadata.changesPercentage) >= 0 ? "text-emerald-500" : "text-red-500"
                         )}>
-                          {(typeof insight.metadata.changesPercentage === 'object'
+                          {(insight.metadata.changesPercentage && typeof insight.metadata.changesPercentage === 'object'
                             ? (parseFloat(insight.metadata.changesPercentage.NSE || insight.metadata.changesPercentage.BSE) || 0)
                             : insight.metadata.changesPercentage) >= 0 ? '+' : ''}
-                          {typeof insight.metadata.changesPercentage === 'object'
+                          {insight.metadata.changesPercentage && typeof insight.metadata.changesPercentage === 'object'
                             ? (insight.metadata.changesPercentage.NSE || insight.metadata.changesPercentage.BSE)
                             : insight.metadata.changesPercentage}%
                         </div>
@@ -888,9 +878,9 @@ export default function Home() {
                     <MetricCopilot
                       key={i}
                       label={m.label}
-                      value={typeof m.value === 'object'
+                      value={(m.value && typeof m.value === 'object')
                         ? (m.value.NSE || m.value.BSE || JSON.stringify(m.value))
-                        : m.value}
+                        : (m.value ?? '---')}
 
                       status={m.status}
                       shortExplanation={m.shortExplanation}
@@ -939,7 +929,7 @@ export default function Home() {
                       <a
                         href={isIndian
                           ? `https://www.sebi.gov.in/search.html?searchval=${selectedSymbol}`
-                          : `https://www.sec.gov/cgi-bin/browse-edgar?CIK=${insight.metadata?.cik || selectedSymbol}&action=getcompany`
+                          : `https://www.sec.gov/edgar/browse/index.html?cik=${insight.metadata?.cik || selectedSymbol}`
                         }
                         target="_blank"
                         rel="noopener noreferrer"
@@ -998,15 +988,10 @@ export default function Home() {
                     </div>
 
                     <div className="space-y-3 flex-1 overflow-hidden flex flex-col">
-                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Live News Aggregator</h4>
+                      <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Research Intelligence Feeds</h4>
                       <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2 pr-2 max-h-[400px]">
-                        {loadingNews ? (
-                          <div className="flex flex-col items-center justify-center py-10 gap-3 opacity-50">
-                            <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
-                            <p className="text-[10px] uppercase font-bold text-slate-600 tracking-widest">Hydrating Feeds...</p>
-                          </div>
-                        ) : liveNews.length > 0 ? (
-                          liveNews.map((news: any, i: number) => (
+                        {insight.metadata.top_headlines && insight.metadata.top_headlines.length > 0 ? (
+                          insight.metadata.top_headlines.map((news: any, i: number) => (
                             <a
                               key={i}
                               href={news.url}
@@ -1015,21 +1000,21 @@ export default function Home() {
                               className="block p-3 rounded-xl bg-white/[0.03] border border-white/5 hover:bg-white/[0.06] hover:border-sky-500/20 transition-all group/news"
                             >
                               <p className="text-[11px] font-medium text-slate-400 group-hover/news:text-slate-200 line-clamp-2 leading-snug mb-1">
-                                {news.title}
+                                {news.headline}
                               </p>
                               <div className="flex items-center justify-between text-[8px] uppercase font-bold text-slate-600">
                                 <span>{news.source}</span>
                                 <span>
                                   {news.date
                                     ? new Date(news.date).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-                                    : 'Recent'}
+                                    : 'Research Date'}
                                 </span>
                               </div>
                             </a>
                           ))
                         ) : (
                           <div className="py-10 text-center">
-                            <p className="text-[10px] text-slate-600 font-mono italic">No live headlines detected for this asset.</p>
+                            <p className="text-[10px] text-slate-600 font-mono italic">No research headlines archived for this synthesis.</p>
                           </div>
                         )}
                       </div>

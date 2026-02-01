@@ -1,8 +1,16 @@
 import YahooFinance from 'yahoo-finance2';
 
-const yahooFinance = new (YahooFinance as any)({
-    suppressNotices: ['ripHistorical', 'yahooSurvey']
-});
+const yahooFinance = new (YahooFinance as any)();
+
+// Suppress notices and strict validation to keep console clean and resilient
+if (typeof (yahooFinance as any).setGlobalConfig === 'function') {
+    (yahooFinance as any).setGlobalConfig({
+        validation: {
+            logErrors: false,
+            throwErrors: false
+        }
+    });
+}
 
 export async function getYahooHistoricalPrices(symbol: string) {
     try {
@@ -31,7 +39,9 @@ export async function getYahooHistoricalPrices(symbol: string) {
 
 export async function getYahooQuote(symbol: string) {
     try {
-        const quote = await yahooFinance.quote(symbol);
+        const quote: any = await yahooFinance.quote(symbol);
+        if (!quote) return null;
+
         return {
             price: quote.regularMarketPrice,
             change: quote.regularMarketChange,
@@ -46,7 +56,7 @@ export async function getYahooQuote(symbol: string) {
             pe: quote.trailingPE,
             eps: quote.trailingEps,
             currency: quote.currency,
-            timestamp: quote.regularMarketTime ? new Date(quote.regularMarketTime).getTime() / 1000 : Math.floor(Date.now() / 1000)
+            timestamp: quote.regularMarketTime ? new Date(quote.regularMarketTime).toISOString() : new Date().toISOString()
         };
     } catch (error) {
         console.error(`Yahoo Finance quote failed for ${symbol}:`, error);
@@ -56,9 +66,9 @@ export async function getYahooQuote(symbol: string) {
 
 export async function getYahooProfile(symbol: string) {
     try {
-        const summary = await yahooFinance.quoteSummary(symbol, {
+        const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: ['assetProfile', 'price', 'summaryDetail']
-        });
+        }, { validate: false });
 
         const profile = summary.assetProfile || {};
         const price = summary.price || {};
@@ -110,7 +120,7 @@ export async function getYahooIncomeStatement(symbol: string, period: 'annual' |
         const module = period === 'annual' ? 'incomeStatementHistory' : 'incomeStatementHistoryQuarterly';
         const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: [module]
-        });
+        }, { validate: false });
 
         const history = (period === 'annual'
             ? summary.incomeStatementHistory?.incomeStatementHistory
@@ -138,7 +148,7 @@ export async function getYahooBalanceSheet(symbol: string, period: 'annual' | 'q
         const module = period === 'annual' ? 'balanceSheetHistory' : 'balanceSheetHistoryQuarterly';
         const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: [module]
-        });
+        }, { validate: false });
 
         const history = (period === 'annual'
             ? summary.balanceSheetHistory?.balanceSheetStatements
@@ -164,7 +174,7 @@ export async function getYahooCashFlow(symbol: string, period: 'annual' | 'quart
         const module = period === 'annual' ? 'cashflowStatementHistory' : 'cashflowStatementHistoryQuarterly';
         const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: [module]
-        });
+        }, { validate: false });
 
         const history = (period === 'annual'
             ? summary.cashflowStatementHistory?.cashflowStatements
@@ -188,9 +198,9 @@ export async function getYahooCashFlow(symbol: string, period: 'annual' | 'quart
 
 export async function getYahooMetrics(symbol: string) {
     try {
-        const summary = await yahooFinance.quoteSummary(symbol, {
+        const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: ['defaultKeyStatistics', 'financialData', 'earningsTrend']
-        });
+        }, { validate: false });
 
         const stats = summary.defaultKeyStatistics || {};
         const financialData = summary.financialData || {};
@@ -237,7 +247,7 @@ export async function getYahooMetrics(symbol: string) {
 
 export async function getYahooNews(symbol: string) {
     try {
-        const results = await yahooFinance.search(symbol, { newsCount: 15 });
+        const results: any = await yahooFinance.search(symbol, { newsCount: 50 });
         return (results.news || []).map((n: any) => ({
             title: n.title,
             url: n.link,
@@ -252,43 +262,72 @@ export async function getYahooNews(symbol: string) {
 }
 
 export async function getYahooAnalysis(symbol: string) {
-    try {
-        const summary = await yahooFinance.quoteSummary(symbol, {
-            modules: [
-                'recommendationTrend',
-                'earningsHistory',
-                'majorHoldersBreakdown',
-                'insiderTransactions',
-                'calendarEvents',
-                'indexTrend',
-                'earningsTrend',
-                'secFilings'
-            ]
-        });
+    const modules: any = [
+        'recommendationTrend',
+        'earningsHistory',
+        'majorHoldersBreakdown',
+        'insiderTransactions',
+        'calendarEvents',
+        'indexTrend',
+        'earningsTrend',
+        'secFilings'
+    ];
 
-        return {
-            recommendationTrend: summary.recommendationTrend?.trend || [],
-            earningsHistory: summary.earningsHistory?.history || [],
-            majorHolders: summary.majorHoldersBreakdown || {},
-            insiders: summary.insiderTransactions?.transactions || [],
-            calendar: summary.calendarEvents || {},
-            indexTrend: summary.indexTrend || {},
-            earningsTrend: summary.earningsTrend?.trend || [],
-            secFilings: summary.secFilings?.filings || []
-        };
-    } catch (error) {
-        console.error(`Yahoo Finance analysis failed for ${symbol}:`, error);
+    const results: any = {};
+
+    // Attempt to fetch all at once first (fastest)
+    try {
+        const summary: any = await yahooFinance.quoteSummary(symbol, { modules }, { validate: false });
+        Object.assign(results, summary);
+    } catch (error: any) {
+        console.warn(`Yahoo Finance batch analysis failed for ${symbol}, falling back to individual module fetch. Error: ${error.message}`);
+
+        // If batch fails (common for internal-error on certain modules), try them one by one
+        await Promise.all(modules.map(async (mod: string) => {
+            try {
+                const res = await yahooFinance.quoteSummary(symbol, { modules: [mod] }, { validate: false });
+                results[mod] = res[mod];
+            } catch (e: any) {
+                // IMPORTANT: If validation fails, the data might still be in e.result
+                if (e.result && e.result[mod]) {
+                    results[mod] = e.result[mod];
+                }
+            }
+        }));
     }
+
+    const summary = results;
+    const filings = summary.secFilings?.filings || [];
+    let cik = null;
+    if (filings.length > 0 && filings[0].edgarUrl) {
+        const match = filings[0].edgarUrl.match(/_(\d+)$/);
+        if (match) cik = match[1];
+    }
+
+    return {
+        recommendationTrend: summary.recommendationTrend?.trend || [],
+        earningsHistory: summary.earningsHistory?.history || [],
+        majorHolders: summary.majorHoldersBreakdown || {},
+        insiders: summary.insiderTransactions?.transactions || [],
+        calendar: summary.calendarEvents || {},
+        indexTrend: summary.indexTrend || {},
+        earningsTrend: summary.earningsTrend?.trend || [],
+        secFilings: filings,
+        cik: cik
+    };
 }
 
 export async function getYahooSECFilings(symbol: string) {
     try {
-        const summary = await yahooFinance.quoteSummary(symbol, {
+        const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: ['secFilings']
-        });
+        }, { validate: false });
         return summary.secFilings?.filings || [];
-    } catch (error) {
-        console.error(`Yahoo Finance SEC filings failed for ${symbol}:`, error);
+    } catch (error: any) {
+        console.error(`Yahoo Finance SEC filings failed for ${symbol}:`, error.message);
+        if (error.result) {
+            return error.result.secFilings?.filings || [];
+        }
         return [];
     }
 }
@@ -299,9 +338,9 @@ export async function getYahooSustainability(symbol: string) {
 
 export async function getYahooRecommendations(symbol: string) {
     try {
-        const summary = await yahooFinance.quoteSummary(symbol, {
+        const summary: any = await yahooFinance.quoteSummary(symbol, {
             modules: ['recommendationTrend']
-        });
+        }, { validate: false });
         return summary.recommendationTrend?.trend || [];
     } catch (error) {
         return [];

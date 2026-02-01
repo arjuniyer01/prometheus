@@ -131,7 +131,9 @@ export default function AdminPage() {
         if (!newTicker) return;
 
         setAddingTicker(true);
-        const upperTicker = newTicker.toUpperCase();
+        let upperTicker = newTicker.toUpperCase();
+        /* Removed automatic .NS normalization to keep names clean on our side. */
+
 
         try {
             const endpoint = market === 'INDIA' ? '/api/analyze/india' : '/api/analyze';
@@ -469,10 +471,6 @@ export default function AdminPage() {
                             </div>
                         </div>
                     </GlassCard>
-
-                    <p className="text-[10px] text-slate-600 text-center uppercase tracking-[0.2em] font-medium">
-                        Warning: Regeneration consumes Gemini & FMP API credits.
-                    </p>
                 </div>
             </div >
 

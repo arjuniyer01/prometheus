@@ -176,7 +176,7 @@ export const analyzeTicker = inngest.createFunction(
         Quarterly Balance Sheet (Last 5): ${JSON.stringify(data.quarterlyBalance)}
         SEC Profile (FMP): ${JSON.stringify(secData.profile)}
         SEC Filings (Recent): ${secData.submissions ? JSON.stringify(secData.submissions.slice(0, 10)) : "No SEC filing data available"}
-        News Headlines: ${JSON.stringify((newsData || []).slice(0, 10).map((n: any) => ({ headline: n.headline, source: n.source })))}
+        News Headlines: ${JSON.stringify((newsData || []).map((n: any) => ({ headline: n.title || n.headline, source: n.source, date: n.date || n.datetime })))}
         
         Output as JSON with:
         - executive_summary: A 2-3 sentence overview of company current health.
@@ -296,7 +296,7 @@ export const analyzeTicker = inngest.createFunction(
                 market: 'US',
                 metadata: {
                     currency: data.quote?.currency || 'USD',
-                    cik: data.profile.cik,
+                    cik: sectorData.fullAnalysis?.cik || data.profile.cik,
                     price: data.quote?.price || data.profile.price,
                     changes: data.quote?.change || data.profile.changes,
                     changesPercentage: data.quote?.changesPercentage || data.profile.changesPercentage,
@@ -321,11 +321,11 @@ export const analyzeTicker = inngest.createFunction(
                     last_sec_filing: (secData.submissions as any)?.[0]
                         ? `${(secData.submissions as any)[0].type} (${(secData.submissions as any)[0].date})`
                         : 'N/A',
-                    top_headlines: (newsData || []).slice(0, 3).map((n: any) => ({
-                        headline: n.headline,
+                    top_headlines: (newsData || []).map((n: any) => ({
+                        headline: n.title || n.headline,
                         url: n.url,
                         source: n.source,
-                        datetime: n.datetime
+                        date: n.date || n.datetime
                     })),
                     raw_research_dump: {
                         cash_flow: sectorData.cashFlow,

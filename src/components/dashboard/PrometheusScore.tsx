@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { GlassCard } from '@/components/ui/GlassCard';
 import { ChevronDown, ChevronUp, Calculator, Settings2, Info } from 'lucide-react';
 import { cn } from "@/lib/utils";
@@ -70,9 +70,9 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
     const [isExpanded, setIsExpanded] = useState(false);
     const [weights, setWeights] = useState({ financial: 25, sec: 15, sentiment: 15, trend: 15, sector: 15, institutional: 15 });
 
-    // Handle initial weight distribution for India
-    useState(() => {
-        if (metadata?.currency === 'INR') {
+    // Reset weights based on market context when metadata changes
+    useEffect(() => {
+        if (metadata?.currency === 'INR' || metadata?.symbol?.endsWith('.NS') || metadata?.symbol?.endsWith('.BO')) {
             setWeights({
                 financial: 30,
                 sec: 0,
@@ -81,8 +81,17 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                 sector: 20,
                 institutional: 20
             });
+        } else {
+            setWeights({
+                financial: 25,
+                sec: 15,
+                sentiment: 15,
+                trend: 15,
+                sector: 15,
+                institutional: 15
+            });
         }
-    });
+    }, [metadata?.currency, metadata?.symbol]);
 
     if (!metadata?.prometheus_score) return null;
 
@@ -120,13 +129,13 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
 
     const totalWeight = weights.financial + weights.sec + weights.sentiment + weights.trend + weights.sector + weights.institutional;
     const computedScore = Math.round(
-        ((breakdown.financial_score * weights.financial) +
-            (breakdown.sec_score * weights.sec) +
-            (breakdown.sentiment_score * weights.sentiment) +
-            (breakdown.trend_score * weights.trend) +
+        (((breakdown.financial_score || 0) * weights.financial) +
+            ((breakdown.sec_score || 0) * weights.sec) +
+            ((breakdown.sentiment_score || 0) * weights.sentiment) +
+            ((breakdown.trend_score || 0) * weights.trend) +
             ((breakdown.sector_score || 0) * weights.sector) +
             ((breakdown.institutional_score || 0) * weights.institutional)) / totalWeight
-    );
+    ) || 0;
 
     return (
         <div className="pb-6 border-b border-white/5">
@@ -179,7 +188,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     <span className="text-slate-500">(</span>{weights.financial}% ×
                                     <Tooltip>
                                         <TooltipTrigger className="mx-1 text-emerald-400 underline decoration-emerald-500/30 underline-offset-4">Fin</TooltipTrigger>
-                                        <TooltipContent className="bg-slate-900 border-emerald-500/20">
+                                        <TooltipContent className="bg-slate-900 border-emerald-500/20 text-slate-200">
                                             <div className="text-xs space-y-1">
                                                 <div className="font-bold border-b border-white/10 pb-1 mb-1">Financial Score: {breakdown.financial_score}</div>
                                                 <div className="flex justify-between gap-4"><span>Profitability:</span> <span>{finSubscores.profitability}</span></div>
@@ -197,7 +206,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                             <span className="text-slate-500">(</span>{weights.sec}% ×
                                             <Tooltip>
                                                 <TooltipTrigger className="mx-1 text-amber-400 underline decoration-amber-500/30 underline-offset-4">Regl</TooltipTrigger>
-                                                <TooltipContent className="bg-slate-900 border-amber-500/20 text-xs">
+                                                <TooltipContent className="bg-slate-900 border-amber-500/20 text-xs text-slate-200">
                                                     <div className="font-bold border-b border-white/10 pb-1 mb-1">Regulatory Score: {breakdown.sec_score}</div>
                                                     <p className="w-32">Risk analysis of recent SEC filings and corporate actions.</p>
                                                 </TooltipContent>
@@ -211,7 +220,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     <span className="text-slate-500">(</span>{weights.sentiment}% ×
                                     <Tooltip>
                                         <TooltipTrigger className="mx-1 text-sky-400 underline decoration-sky-500/30 underline-offset-4">Sent</TooltipTrigger>
-                                        <TooltipContent className="bg-slate-900 border-sky-500/20 text-xs">
+                                        <TooltipContent className="bg-slate-900 border-sky-500/20 text-xs text-slate-200">
                                             <div className="font-bold border-b border-white/10 pb-1 mb-1">Sentiment Score: {breakdown.sentiment_score}</div>
                                             <p className="w-32">AI synthesis of news headlines and market tone.</p>
                                         </TooltipContent>
@@ -223,7 +232,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     <span className="text-slate-500">(</span>{weights.trend}% ×
                                     <Tooltip>
                                         <TooltipTrigger className="mx-1 text-purple-400 underline decoration-purple-500/30 underline-offset-4">Trend</TooltipTrigger>
-                                        <TooltipContent className="bg-slate-900 border-purple-500/20 text-xs space-y-1">
+                                        <TooltipContent className="bg-slate-900 border-purple-500/20 text-xs space-y-1 text-slate-200">
                                             <div className="font-bold border-b border-white/10 pb-1 mb-1">Trend Score: {breakdown.trend_score}</div>
                                             <div className="flex justify-between gap-4"><span>Momentum:</span> <span>{trendSubscores.quarterly_momentum}</span></div>
                                             <div className="flex justify-between gap-4"><span>Stability:</span> <span>{trendSubscores.annual_stability}</span></div>
@@ -236,7 +245,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     <span className="text-slate-500">(</span>{weights.sector}% ×
                                     <Tooltip>
                                         <TooltipTrigger className="mx-1 text-rose-400 underline decoration-rose-500/30 underline-offset-4">Sect</TooltipTrigger>
-                                        <TooltipContent className="bg-slate-900 border-rose-500/20 text-xs space-y-1">
+                                        <TooltipContent className="bg-slate-900 border-rose-500/20 text-xs space-y-1 text-slate-200">
                                             <div className="font-bold border-b border-white/10 pb-1 mb-1">Sector Score: {breakdown.sector_score}</div>
                                             <div className="flex justify-between gap-4"><span>Vs Sector:</span> <span>{sectorSubscores.outperformance}</span></div>
                                             <div className="flex justify-between gap-4"><span>Seasonality:</span> <span>{sectorSubscores.seasonality_strength}</span></div>
@@ -250,7 +259,7 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                                     <span className="text-slate-500">(</span>{weights.institutional}% ×
                                     <Tooltip>
                                         <TooltipTrigger className="mx-1 text-orange-400 underline decoration-orange-500/30 underline-offset-4">Intel</TooltipTrigger>
-                                        <TooltipContent className="bg-slate-900 border-orange-500/20 text-xs space-y-1">
+                                        <TooltipContent className="bg-slate-900 border-orange-500/20 text-xs space-y-1 text-slate-200">
                                             <div className="font-bold border-b border-white/10 pb-1 mb-1">Institutional Score: {breakdown.institutional_score}</div>
                                             <div className="flex justify-between gap-4"><span>Analysts:</span> <span>{institutionalSubscores.analyst_conviction}</span></div>
                                             <div className="flex justify-between gap-4"><span>Insiders:</span> <span>{institutionalSubscores.insider_signal}</span></div>
@@ -264,17 +273,17 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                             <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-white bg-black/20 p-2 rounded-lg border border-white/5">
                                 <span className="text-indigo-300">{computedScore}</span>
                                 <span className="text-slate-600">=</span>
-                                <span className="text-emerald-300/80">({(breakdown.financial_score * weights.financial / 100).toFixed(1)})</span>
+                                <span className="text-emerald-300/80">({((breakdown.financial_score || 0) * weights.financial / 100).toFixed(1)})</span>
                                 {metadata?.currency !== 'INR' && (
                                     <>
                                         <span className="text-slate-600">+</span>
-                                        <span className="text-amber-300/80">({(breakdown.sec_score * weights.sec / 100).toFixed(1)})</span>
+                                        <span className="text-amber-300/80">({((breakdown.sec_score || 0) * weights.sec / 100).toFixed(1)})</span>
                                     </>
                                 )}
                                 <span className="text-slate-600">+</span>
-                                <span className="text-sky-300/80">({(breakdown.sentiment_score * weights.sentiment / 100).toFixed(1)})</span>
+                                <span className="text-sky-300/80">({((breakdown.sentiment_score || 0) * weights.sentiment / 100).toFixed(1)})</span>
                                 <span className="text-slate-600">+</span>
-                                <span className="text-purple-300/80">({(breakdown.trend_score * weights.trend / 100).toFixed(1)})</span>
+                                <span className="text-purple-300/80">({((breakdown.trend_score || 0) * weights.trend / 100).toFixed(1)})</span>
                                 <span className="text-slate-600">+</span>
                                 <span className="text-rose-300/80">({((breakdown.sector_score || 0) * weights.sector / 100).toFixed(1)})</span>
                                 <span className="text-slate-600">+</span>

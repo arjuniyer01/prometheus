@@ -165,7 +165,11 @@ export const analyzeTickerIndia = inngest.createFunction(
     { event: "app/analyze.requested.india" },
 
     async ({ event, step }) => {
-        const { ticker } = event.data;
+        let { ticker } = event.data;
+        /* Removed automatic .NS normalization here to prevent DB duplication. 
+           Scrapers already handle adding .NS if needed for API calls. */
+
+
         console.log(`Starting Indian analysis for ticker: ${ticker}`);
 
         await step.run("clear-old-data", async () => {
@@ -306,7 +310,7 @@ export const analyzeTickerIndia = inngest.createFunction(
         Corporate Actions: ${JSON.stringify(data.corporateActions)}
         Sector Intelligence (Market Momentum): ${JSON.stringify(data.sectorData)}
         Institutional Data (Analyst Recs, Insiders, Earnings): ${JSON.stringify(data.extraData.fullAnalysis)}
-        News Headlines: ${JSON.stringify((data.news || []).slice(0, 15).map((n: any) => ({ headline: n.title, source: n.source, snippet: n.snippet })))}
+        News Headlines: ${JSON.stringify((data.news || []).map((n: any) => ({ headline: n.title, source: n.source, snippet: n.snippet })))}
         
         Output as JSON with:
         - executive_summary: A 2-3 sentence overview of company current health.
@@ -473,7 +477,7 @@ export const analyzeTickerIndia = inngest.createFunction(
                     institutional_subscores: aiAnalysis.institutional_subscores || { analyst_conviction: 0, insider_signal: 0, earnings_reliability: 0 },
                     financial_score_drivers: aiAnalysis.financial_score_drivers || [],
                     financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, sentiment, momentum, sector, and institutional signals",
-                    top_headlines: (data.news || []).slice(0, 3).map((n: any) => ({
+                    top_headlines: (data.news || []).map((n: any) => ({
                         headline: n.title || n.headline,
                         url: n.url,
                         source: n.source,
@@ -484,7 +488,8 @@ export const analyzeTickerIndia = inngest.createFunction(
                         full_analysis: data.extraData.fullAnalysis,
                         sustainability: data.extraData.sustainability,
                         extended_profile: data.profile,
-                        extended_metrics: data.ratios
+                        extended_metrics: data.ratios,
+                        corporate_actions: data.corporateActions
                     }
                 }
 

@@ -10,8 +10,10 @@ import {
     getYahooAnalysis,
     getYahooRecommendations
 } from '../src/lib/yahoo-finance';
+import YahooFinance from 'yahoo-finance2';
+const yahooFinance = new (YahooFinance as any)();
 
-const symbols = ["AAPL", "RELIANCE.NS"];
+const symbols = ["AAPL", "RELIANCE.NS", "TE"];
 
 async function runTest() {
     console.log("\x1b[36m%s\x1b[0m", "🚀 PROMETHEUS YAHOO FINANCE INTEGRATION TEST");
@@ -56,6 +58,18 @@ async function runTest() {
             console.log(`✅ Analysis: Trends: ${analysis?.recommendationTrend?.length || 0} | Insiders: ${analysis?.insiders?.length || 0}`);
             console.log(`✅ Analyst Recs: ${recs.length > 0 ? `${recs.length} forecast rows` : "FAILED"}`);
             console.log(`✅ News Headlines: ${news.length > 0 ? `${news.length} articles` : "FAILED"}`);
+
+            // 5. FUNDAMENTALS TIME SERIES TEST
+            try {
+                const fundamentals = await yahooFinance.fundamentalsTimeSeries(symbol, {
+                    period1: '2020-01-01',
+                    type: 'annual',
+                    module: 'financials'
+                }, { validate: false });
+                console.log(`✅ Fundamentals: Fetched ${Object.keys(fundamentals).length} metrics from TimeSeries`);
+            } catch (fError: any) {
+                console.log(`⚠️ Fundamentals TS test failed: ${fError.message}`);
+            }
 
         } catch (error: any) {
             console.error(`\x1b[31m❌ TEST FAILED FOR ${symbol}:\x1b[0m`, error.message);
