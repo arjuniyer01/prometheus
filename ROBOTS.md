@@ -115,7 +115,20 @@ We do not rely on standard API news endpoints (often delayed or limited).
 *   **Deduplication**: The `news-rss.ts` utility merges these streams, filtering out duplicates based on flexible Levenshtein distance on titles or exact URL matching.
 
 ### 4. Codebase Navigation
-*   `src/app/page.tsx`: The monolithic "Dashboard". Contains state management, UI composition, and chart rendering.
+*   `src/app/page.tsx`: The main entry point. Now a clean orchestrator using modular components and hooks.
+*   `src/hooks/useStockDashboard.ts`: Centralizes state management, Supabase data fetching, and real-time updates for the dashboard.
+*   `src/components/dashboard/`: Contains modular UI components:
+    *   `TickerSearch.tsx`: Search and asset selection.
+    *   `PriceChart.tsx`: Recharts-based charting engine (Area/Candles).
+    *   `PrometheusReportPanel.tsx`: Left column (Score, Summary, Bull/Bear cases).
+    *   `RegulatorySentimentPanel.tsx`: Right column (SEC, News, Sentiment).
+    *   `FinancialsTable.tsx`: Historical P&L and Balance Sheet.
+    *   `DeepFundamentalAnalysis.tsx`: Strategy and trend analysis.
+    *   `PrometheusScore.tsx`: Draggable priority knobs and score computation.
+    *   `InstitutionalIntelligence.tsx`: Ownership and institutional data.
+    *   `ExecutiveBench.tsx`: Management and compensation data.
+*   `src/lib/formatters.ts`: Unified financial formatting utilities.
+*   `src/lib/report-utils.ts`: Markdown report generation logic.
 *   `src/lib/functions.ts`: Core data fetching logic for US Markets.
 *   `src/lib/functions-india.ts`: Core data fetching logic for Indian Markets (maintains parity with US).
 *   `src/lib/ai-prompt.ts`: The "Brain". Contains the massive, structured prompt sent to Gemini.
