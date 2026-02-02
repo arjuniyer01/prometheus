@@ -22,6 +22,7 @@ Prometheus is a high-performance, institutional-grade financial intelligence ter
     *   *Design System*: "Institutional Monochrome" (Slate/Zinc/Black).
     *   *Utilities*: `lucide-react` (Icons), `clsx`/`tailwind-merge` (Class management).
 *   **Visualization**: Recharts (Customized for High-Frequency Trading aesthetics).
+    *   **Technical Analysis Engine**: `technicalindicators` (JS-native TA-Lib implementation for RSI, MACD, BB).
 *   **Backend Services**:
     *   **Database**: Supabase (PostgreSQL with RLS policies).
     *   **Queue/Jobs**: Inngest (Reliable serverless function orchestration).
