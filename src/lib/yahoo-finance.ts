@@ -15,7 +15,7 @@ if (typeof (yahooFinance as any).setGlobalConfig === 'function') {
 export async function getYahooHistoricalPrices(symbol: string) {
     try {
         const queryOptions = {
-            period1: new Date(new Date().setFullYear(new Date().getFullYear() - 5)),
+            period1: new Date('1980-01-01'), // Extended history for MAX view (45+ years)
             period2: new Date(),
             interval: '1d' as const,
         };

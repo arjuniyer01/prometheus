@@ -134,11 +134,15 @@ export const analyzeTicker = inngest.createFunction(
         });
 
         const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+
+
         const aiAnalysis = await step.run("generate-ai-insights", async () => {
             console.log(`Generating Gemini insights for ${ticker}...`);
 
             const prompt = `
         Analyze the following financial, regulatory, and news data for ${ticker} and act as a "Technical Copilot" for a retail investor.
+        
         
         CURRENT DATE: ${today}
 

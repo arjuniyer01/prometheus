@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef } from "react";
 import {
     AreaChart,
     Area,
@@ -13,12 +13,30 @@ import {
     Tooltip as RechartsTooltip,
     ResponsiveContainer,
     Brush,
+    Scatter,
 } from "recharts";
 import { createPortal } from "react-dom";
-import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers } from "lucide-react";
+import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers, ScanEye, Download } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
 import { RSI, MACD, BollingerBands, EMA, ADX, ATR, Stochastic, WilliamsR, MFI, OBV, TRIX, VWAP, CCI, ROC, KST, PSAR, ADL, ForceIndex, AwesomeOscillator } from "technicalindicators";
+
+
+const PatternShape = (props: any) => {
+    const { cx, cy, payload } = props;
+    if (!payload.pattern) return null;
+
+    const isBull = payload.pattern.type === 'bull';
+    const isBear = payload.pattern.type === 'bear';
+    const color = isBull ? '#10b981' : (isBear ? '#f43f5e' : '#fbbf24');
+
+    return (
+        <g transform={`translate(${cx},${cy})`}>
+            <circle r={3} fill={color} strokeWidth={0} />
+            <circle r={5} fill="none" stroke={color} strokeWidth={1} opacity={0.5} />
+        </g>
+    );
+};
 
 // Candle component extracted internally for now or could be a separate file
 const Candle = (props: any) => {
@@ -140,6 +158,8 @@ export function PriceChart({
     const [showADL, setShowADL] = useState(true);
     const [showForce, setShowForce] = useState(true);
     const [showAO, setShowAO] = useState(true);
+    const [showPatterns, setShowPatterns] = useState(false);
+    const terminalChartRef = useRef<HTMLDivElement>(null);
 
     const IndicatorTooltip = ({ active, payload, suffix = "" }: any) => {
         if (!active || !payload || !payload.length) return null;
@@ -273,6 +293,50 @@ export function PriceChart({
         const data = prices.map((p, idx) => {
             const bodyMin = Math.min(p.open, p.close);
             const bodyMax = Math.max(p.open, p.close);
+
+            let pattern = null;
+            let patternY = null;
+
+            if (idx > 0) {
+                const prev = prices[idx - 1];
+                const O = p.open; const H = p.high; const L = p.low; const C = p.close;
+                const pO = prev.open; const pC = prev.close;
+                const body = Math.abs(C - O);
+                const range = H - L;
+                const upperWick = H - Math.max(C, O);
+                const lowerWick = Math.min(C, O) - L;
+                const isGreen = C > O;
+                const isRed = C < O;
+                const isPrevRed = pC < pO;
+                const isPrevGreen = pC > pO;
+
+                // Doji (Indecision)
+                if (body <= range * 0.1 && range > 0) {
+                    pattern = { name: "Doji", type: "neutral" };
+                    patternY = H * 1.002;
+                }
+                // Bullish Engulfing
+                else if (isPrevRed && isGreen && C > pO && O < pC) {
+                    pattern = { name: "Bull Engulf", type: "bull" };
+                    patternY = L * 0.998;
+                }
+                // Bearish Engulfing
+                else if (isPrevGreen && isRed && C < pO && O > pC) {
+                    pattern = { name: "Bear Engulf", type: "bear" };
+                    patternY = H * 1.002;
+                }
+                // Hammer
+                else if (lowerWick > body * 2 && upperWick < body * 0.5) {
+                    pattern = { name: "Hammer", type: "bull" };
+                    patternY = L * 0.998;
+                }
+                // Shooting Star
+                else if (upperWick > body * 2 && lowerWick < body * 0.5) {
+                    pattern = { name: "Shooting Star", type: "bear" };
+                    patternY = H * 1.002;
+                }
+            }
+
             return {
                 ...p,
                 sma20: sma20[idx], sma50: sma50[idx], rsi: paddedRSI[idx], macd: paddedMACD[idx], bb: paddedBB[idx],
@@ -280,67 +344,144 @@ export function PriceChart({
                 stoch: paddedStoch[idx], wr: paddedWR[idx], mfi: paddedMFI[idx], obv: paddedOBV[idx],
                 trix: paddedTRIX[idx], vwap: paddedVWAP[idx], cci: paddedCCI[idx], roc: paddedROC[idx],
                 kst: paddedKST[idx], psar: paddedPSAR[idx], adl: paddedADL[idx], force: paddedForce[idx],
-                ao: paddedAO[idx], bodyRange: [bodyMin, bodyMax]
+                ao: paddedAO[idx], bodyRange: [bodyMin, bodyMax],
+                pattern, patternY
             };
         });
 
-        // Pass 2: Historical Trigger Mapping
+        // Pass 2: Historical Trigger Mapping (Quantitative Architecture Implementation)
         const withLevels = data.map((p, idx) => {
-            if (idx < 20) return p;
+            if (idx < 60) return { ...p, directionScore: 0, predictedDirection: "Neutral" }; // Wait for Z-score maturity
 
-            // Simplified consensus for historical points
-            let score = 0;
-            if (p.ema20 && p.ema50) {
-                if (p.close > p.ema20) score += 10; else score -= 10;
-                if (p.ema20 > p.ema50) score += 15; else score -= 15;
-            }
-            if (p.macd) {
-                if (p.macd.MACD > p.macd.signal) score += 20; else score -= 20;
-            }
-            if ((p.rsi || 50) > 70) score -= 10; else if ((p.rsi || 50) < 30) score += 15;
+            // 1. Continuous Trend Component (Ts)
+            // Normalized distance between Price and EMA20, and EMA20 and EMA50
+            const emaSpread = (p.ema20 && p.ema50) ? (p.ema20 - p.ema50) / p.ema50 : 0;
+            const priceDev = p.ema20 ? (p.close - p.ema20) / p.ema20 : 0;
+            const Ts = Math.tanh((emaSpread * 10) + (priceDev * 15)) * (p.trix > 0 ? 1 : (p.trix < 0 ? -1 : 0.5));
 
+            // 2. High-Sensitivity Momentum (Mz) 
+            const macdSlice = data.slice(idx - 59, idx + 1).map(s => s.macd?.histogram || 0);
+            const macdMean = macdSlice.reduce((a, b) => a + b, 0) / 60;
+            const macdStd = Math.sqrt(macdSlice.reduce((a, b) => a + Math.pow(b - macdMean, 2), 0) / 60) || 0.0001;
+            const macdZ = ((p.macd?.histogram || 0) - macdMean) / macdStd;
+            const Mz = Math.tanh(macdZ); // Remove ADX scaling to prevent signal dampening
+
+            // 3. Volume Conviction Vector (Vs)
+            // Uses 13-period EMA of Force Index normalized via Z-Score
+            const forceSlice = data.slice(idx - 59, idx + 1).map(s => s.force || 0);
+            const forceMean = forceSlice.reduce((a, b) => a + b, 0) / 60;
+            const forceStd = Math.sqrt(forceSlice.reduce((a, b) => a + Math.pow(b - forceMean, 2), 0) / 60) || 0.0001;
+            const forceZ = ((p.force || 0) - forceMean) / forceStd;
+            const Vs = Math.tanh(forceZ);
+
+            // 4. Oscillator Component (Os) - Normalized RSI
+            const Os = ((p.rsi || 50) - 50) / 50;
+
+            // Final Weekly Prediction Bias (WPB V3)
+            // Weights: Trend (0.3), Momentum (0.3), Volume (0.3), Oscillator (0.1)
+            const wpb_std = (0.3 * Ts) + (0.3 * Mz) + (0.3 * Vs) + (0.1 * Os);
+
+            // Sub-Strategy Variants
+            const wpb_mom = (0.1 * Ts) + (0.6 * Mz) + (0.2 * Vs) + (0.1 * Os);
+            const wpb_trn = (0.6 * Ts) + (0.1 * Mz) + (0.2 * Vs) + (0.1 * Os);
+
+            // 4. Regime-Adaptive (VAM Logic)
+            const adxVal = (p.adx?.adx || 0);
+            const wpb_ada = adxVal > 25
+                ? (0.2 * Ts) + (0.4 * Mz) + (0.4 * Vs) // Trending: Focus Momentum + Volume
+                : (0.1 * Ts) + (0.1 * Mz) + (0.1 * Vs) + (0.7 * Os); // Ranging: Focus Oscillators
+
+            const score = wpb_std * 100;
             const atr = p.atr || (p.close * 0.02);
             const slice = data.slice(idx - 19, idx + 1);
             const maxHigh = Math.max(...slice.map(s => s.high));
             const minLow = Math.min(...slice.map(s => s.low));
 
-            const sentimentMultiplier = 1.5 - ((score / 100) * 0.5);
-            const bullTrigger = Math.max(maxHigh, (p.ema20 || p.close) + (atr * sentimentMultiplier));
-            const bearTrigger = Math.min(minLow, (p.ema20 || p.close) - (atr * sentimentMultiplier));
+            // Sigma Multiplier Logic
+            const sigma = 1.5 - ((wpb_std) * 0.5);
+            const bullTrigger = Math.max(maxHigh, (p.ema20 || p.close) + (atr * sigma));
+            const bearTrigger = Math.min(minLow, (p.ema20 || p.close) - (atr * sigma));
 
-            return { ...p, bullTrigger, bearTrigger };
+            const getDir = (val: number) => {
+                if (val > 0.1) return "Bullish";
+                if (val < -0.1) return "Bearish";
+                return "Neutral";
+            };
+
+            return {
+                ...p,
+                bullTrigger, bearTrigger,
+                predictedDirection: getDir(wpb_std),
+                dirMom: getDir(wpb_mom),
+                dirTrn: getDir(wpb_trn),
+                dirAda: getDir(wpb_ada),
+                directionScore: score,
+                wpb: wpb_std,
+                quantVersion: "3.0"
+            };
         });
 
         // Pass 3: Backtest Lookahead (1 week = 5-7 days)
         return withLevels.map((p, idx) => {
             if (idx > withLevels.length - 8 || !p.bullTrigger) return p;
 
-            const lookahead = withLevels.slice(idx + 1, idx + 6); // 5-day lookahead
-            const maxFound = Math.max(...lookahead.map(l => l.high));
-            const minFound = Math.min(...lookahead.map(l => l.low));
-            const endPrice = lookahead[lookahead.length - 1].close;
+            // Base 1W Lookahead Data for Trigger Integrity
+            const lookahead1w_data = withLevels.slice(idx + 1, idx + 6);
+            if (!lookahead1w_data.length) return p;
 
+            const maxFound = Math.max(...lookahead1w_data.map(l => l.high));
+            const minFound = Math.min(...lookahead1w_data.map(l => l.low));
+            const endPrice = lookahead1w_data[lookahead1w_data.length - 1].close;
+
+            // Trigger Integrity (1W)
             const bullHit = maxFound >= p.bullTrigger;
             const bearHit = minFound <= p.bearTrigger;
-
-            // Accuracy: Did the level act as a confirmed pivot?
-            // If bull was hit, was it a "Win" (closed higher)?
-            // If price stayed within range, was it a "Hold"?
             let bullAccuracy = 0;
             if (bullHit) {
                 bullAccuracy = endPrice >= p.bullTrigger ? 100 : 0;
             } else {
-                bullAccuracy = maxFound < p.bullTrigger ? 100 : 0; // Integrity check: did it hold resistance?
+                bullAccuracy = maxFound < p.bullTrigger ? 100 : 0;
             }
 
             let bearAccuracy = 0;
             if (bearHit) {
                 bearAccuracy = endPrice <= p.bearTrigger ? 100 : 0;
             } else {
-                bearAccuracy = minFound > p.bearTrigger ? 100 : 0; // Integrity check: did it hold support?
+                bearAccuracy = minFound > p.bearTrigger ? 100 : 0;
             }
 
-            return { ...p, bullHit, bearHit, bullAccuracy, bearAccuracy };
+            // Multi-Horizon Benchmarking
+            const calcAccHorizon = (pred: string, days: number) => {
+                const horizonData = withLevels.slice(idx + 1, idx + days + 1);
+                if (horizonData.length < Math.min(days, 2)) return undefined;
+                const ePrice = horizonData[horizonData.length - 1].close;
+
+                if (pred === "Bullish") return ePrice > p.close ? 100 : 0;
+                if (pred === "Bearish") return ePrice < p.close ? 100 : 0;
+                // Neutral prediction: Success if price stayed within +/- 1.5 ATR (Market Consolidation)
+                const atr = p.atr || (p.close * 0.02);
+                return Math.abs(ePrice - p.close) < (atr * 1.5) ? 100 : 0;
+            };
+
+            const acc3d = calcAccHorizon(p.predictedDirection, 3);
+            const acc1w = calcAccHorizon(p.predictedDirection, 5);
+            const acc2w = calcAccHorizon(p.predictedDirection, 10);
+            const acc1m = calcAccHorizon(p.predictedDirection, 21);
+
+            // Strategy Benchmarking (Current 1W baseline)
+            const calcAcc = (pred: string) => {
+                if (pred === "Bullish") return endPrice > p.close ? 100 : 0;
+                if (pred === "Bearish") return endPrice < p.close ? 100 : 0;
+                const atr = p.atr || (p.close * 0.02);
+                return Math.abs(endPrice - p.close) < atr ? 100 : 0;
+            };
+
+            const directionAccuracy = calcAcc(p.predictedDirection);
+            const accMom = calcAcc(p.dirMom);
+            const accTrn = calcAcc(p.dirTrn);
+            const accAda = calcAcc(p.dirAda);
+
+            return { ...p, bullHit, bearHit, bullAccuracy, bearAccuracy, directionAccuracy, accMom, accTrn, accAda, acc3d, acc1w, acc2w, acc1m };
         });
     }, [prices]);
 
@@ -352,185 +493,125 @@ export function PriceChart({
 
         const totalBull = validPoints.reduce((acc, p) => acc + (p.bullAccuracy || 0), 0);
         const totalBear = validPoints.reduce((acc, p) => acc + (p.bearAccuracy || 0), 0);
+        const totalDirection = validPoints.reduce((acc, p) => acc + (p.directionAccuracy || 0), 0);
 
         const bullAvg = totalBull / validPoints.length;
         const bearAvg = totalBear / validPoints.length;
+        const directionAvg = totalDirection / validPoints.length;
+
+        const momAvg = validPoints.reduce((acc, p) => acc + (p.accMom || 0), 0) / validPoints.length;
+        const trnAvg = validPoints.reduce((acc, p) => acc + (p.accTrn || 0), 0) / validPoints.length;
+        const adaAvg = validPoints.reduce((acc, p) => acc + (p.accAda || 0), 0) / validPoints.length;
+
+        const h3d = validPoints.filter(p => p.acc3d !== undefined);
+        const h1w = validPoints.filter(p => p.acc1w !== undefined);
+        const h2w = validPoints.filter(p => p.acc2w !== undefined);
+        const h1m = validPoints.filter(p => p.acc1m !== undefined);
 
         return {
             bull: bullAvg,
             bear: bearAvg,
-            overall: (bullAvg + bearAvg) / 2
+            direction: directionAvg,
+            mom: momAvg,
+            trn: trnAvg,
+            ada: adaAvg,
+            h3d: h3d.length ? (h3d.reduce((acc, p) => acc + p.acc3d, 0) / h3d.length) : 0,
+            h1w: h1w.length ? (h1w.reduce((acc, p) => acc + p.acc1w, 0) / h1w.length) : 0,
+            h2w: h2w.length ? (h2w.reduce((acc, p) => acc + p.acc2w, 0) / h2w.length) : 0,
+            h1m: h1m.length ? (h1m.reduce((acc, p) => acc + p.acc1m, 0) / h1m.length) : 0,
+            overall: (bullAvg + bearAvg + directionAvg) / 3
         };
     }, [dataWithIndicators]);
 
     const filteredPrices = useMemo(() => {
         if (!dataWithIndicators.length) return [];
+        if (!isChartExpanded) return dataWithIndicators; // Mini Chart = Max Data
 
         switch (chartTimeframe) {
             case '1M': return dataWithIndicators.slice(-22);
             case '6M': return dataWithIndicators.slice(-126);
             case '1Y': return dataWithIndicators.slice(-252);
+            // Cap Terminal at 1Y to prevent UI crash
             case '5Y':
             case 'MAX':
-            default: return dataWithIndicators;
+            default: return dataWithIndicators.slice(-252);
         }
-    }, [dataWithIndicators, chartTimeframe]);
+    }, [dataWithIndicators, chartTimeframe, isChartExpanded]);
 
     const consensusEngine = useMemo(() => {
         if (!filteredPrices.length) return null;
         const last = filteredPrices[filteredPrices.length - 1];
         const price = last.close;
 
-        let score = 0; // -100 to 100
         const reasons: string[] = [];
 
-        // 1. Moving Averages - EMA/SMA Crosses
-        if (last.ema20 && last.ema50) {
-            if (price > last.ema20) score += 10; else score -= 10;
-            if (last.ema20 > last.ema50) {
-                score += 15;
-                reasons.push("Bullish EMA Stack: 20-day is above 50-day, indicating a sustained medium-term uptrend.");
-            } else {
-                score -= 15;
-                reasons.push("Bearish EMA Stack: Short-term average is trading below long-term, suggesting structural weakness.");
-            }
+        // 1. Continuous Trend Component (Ts)
+        const emaSpread = (last.ema20 && last.ema50) ? (last.ema20 - last.ema50) / last.ema50 : 0;
+        const priceDev = last.ema20 ? (price - last.ema20) / last.ema20 : 0;
+        const Ts = Math.tanh((emaSpread * 10) + (priceDev * 15)) * (last.trix > 0 ? 1 : (last.trix < 0 ? -1 : 0.5));
+
+        if (Math.abs(Ts) > 0.5) {
+            reasons.push(Ts > 0 ? "Structural Trend: Continuous EMA stack confirms strong upside persistence." : "Structural Trend: Negative EMA divergence indicates sustained sell-side structural bias.");
         }
 
-        // 2. MACD
-        if (last.macd) {
-            if (last.macd.MACD > last.macd.signal) {
-                score += 20;
-                reasons.push("MACD Signal: Bullish crossover active (MACD Line > Signal Line).");
-            } else {
-                score -= 20;
-                reasons.push("MACD Signal: Bearish divergence or crossover detected in recent sessions.");
-            }
+        // 2. High-Sensitivity Momentum (Mz)
+        const macdSlice = filteredPrices.slice(-60).map(s => s.macd?.histogram || 0);
+        const macdMean = macdSlice.reduce((a, b) => a + b, 0) / macdSlice.length;
+        const macdStd = Math.sqrt(macdSlice.reduce((a, b) => a + Math.pow(b - macdMean, 2), 0) / macdSlice.length) || 0.0001;
+        const macdZ = ((last.macd?.histogram || 0) - macdMean) / macdStd;
+        const Mz = Math.tanh(macdZ);
+
+        if (Math.abs(macdZ) > 1.0) {
+            reasons.push(`Momentum Intensity: MACD is trading at ${macdZ.toFixed(1)}σ from its rolling mean.`);
         }
 
-        // 3. Oscillators (RSI / Stoch)
+        // 3. Volume Conviction Vector (Vs)
+        const forceSlice = filteredPrices.slice(-60).map(s => s.force || 0);
+        const forceMean = forceSlice.reduce((a, b) => a + b, 0) / forceSlice.length;
+        const forceStd = Math.sqrt(forceSlice.reduce((a, b) => a + Math.pow(b - forceMean, 2), 0) / forceSlice.length) || 0.0001;
+        const forceZ = ((last.force || 0) - forceMean) / forceStd;
+        const Vs = Math.tanh(forceZ);
+
+        if (Math.abs(forceZ) > 1.0) {
+            reasons.push(Vs > 0 ? "Volume Conviction: Positive Force Index Z-Score confirms capital in-flow." : "Volume Conviction: Negative Force Index delta indicates active institutional distribution.");
+        }
+
+        // 4. Oscillator Component (Os)
         const rsi = last.rsi || 50;
-        if (rsi > 70) {
-            score -= 10;
-            reasons.push("Caution: RSI suggests overbought conditions ($>70$), increasing risk of price exhaustion.");
-        } else if (rsi < 30) {
-            score += 15;
-            reasons.push("Opportunity: RSI is deep in oversold territorio ($<30$), suggesting high-probability bounce.");
-        }
+        const Os = (rsi - 50) / 50;
+        if (rsi > 70) reasons.push("Mean Reversion: Oscillator levels suggest overbought exhaustion.");
+        else if (rsi < 30) reasons.push("Mean Reversion: Deeply oversold conditions suggest potential structural bottoming.");
 
-        const stoch = last.stoch?.k || 50;
-        if (stoch > 80) reasons.push("Stochastic Oscillator confirms extreme overbought momentum.");
-        else if (stoch < 20) reasons.push("Stochastic Oscillator is heavily oversold, confirming bottom-fish signal.");
+        // Final Weighted Composite (WPB V3)
+        // Weights: Trend (0.3), Momentum (0.3), Volume (0.3), Oscillator (0.1)
+        const wpb = (0.3 * Ts) + (0.3 * Mz) + (0.3 * Vs) + (0.1 * Os);
+        const score = wpb * 100;
 
-        // 4. Williams %R - Momentum
-        const wr = last.wr || -50;
-        if (wr < -80) {
-            score += 10;
-            reasons.push("Williams %R: High-conviction oversold signal ($<-80$).");
-        } else if (wr > -20) {
-            score -= 10;
-            reasons.push("Williams %R: Risk of reversal from overbought levels ($>-20$).");
-        }
-
-        // 5. MFI - Volume-Weighted Momentum
-        const mfi = last.mfi || 50;
-        if (mfi > 70) {
-            score -= 10;
-            reasons.push(`MFI is overbought at ${mfi.toFixed(0)}, suggesting capital inflow exhaustion.`);
-        } else if (mfi < 30) {
-            score += 15;
-            reasons.push(`MFI is oversold at ${mfi.toFixed(0)}, suggesting a potential volume-led reversal.`);
-        }
-
-        // 6. VWAP - Institutional Benchmark
-        if (last.vwap) {
-            if (price > last.vwap) {
-                score += 10;
-                reasons.push("Price above VWAP indicates institutional buyers are dominant today.");
-            } else {
-                score -= 10;
-                reasons.push("Price below VWAP suggests institutional distribution or selling pressure.");
-            }
-        }
-
-        // 7. CCI - Trend Quality
-        const cci = last.cci || 0;
-        if (cci > 100) {
-            score += 5;
-            reasons.push("CCI indicates a strong bullish trend extension.");
-        } else if (cci < -100) {
-            score -= 5;
-            reasons.push("CCI indicates a strong bearish trend extension.");
-        }
-
-        // 8. ROC / Momentum
-        const roc = last.roc || 0;
-        if (roc > 0) score += 5; else score -= 5;
-
-        // 9. Force Index - Trend Confirmation
-        if (last.force > 0) {
-            score += 10;
-            reasons.push("Force Index confirms positive trend with volume support.");
-        }
-
-        // 10. Awesome Oscillator
-        if (last.ao > 0) score += 5;
-
-        // 11. KST - Long term pulse
-        if (last.kst?.kst > last.kst?.signal) {
-            score += 10;
-            reasons.push("Know Sure Thing (KST) indicates bullish momentum pulse.");
-        }
-
-        // 6. Trend Sensitivity (TRIX)
-        if (last.trix) {
-            if (last.trix > 0) score += 5; else score -= 5;
-            reasons.push(`TRIX impulse is currently ${last.trix > 0 ? 'Bullish' : 'Bearish'}.`);
-        }
-
-        // 7. Trend Strength (ADX)
-        const adx = last.adx?.adx || 0;
-        if (adx > 25) {
-            reasons.push(`High conviction trend strength confirmed by ADX level of ${adx.toFixed(1)}.`);
-        } else {
-            score = score * 0.6; // Heavy dampening in non-trending markets
-            reasons.push("ADX $< 25$ indicates a lack of clear trend direction; expect mean-reverting chop.");
-        }
-
-        // 5. Volatility / BB
-        if (last.bb) {
-            if (price > last.bb.upper) {
-                score -= 5;
-                reasons.push("Volatility Alert: Price trading above upper Bollinger Band; risk of sharp mean-reversion.");
-            } else if (price < last.bb.lower) {
-                score += 5;
-                reasons.push("Volatility Alert: Price tagged lower Bollinger Band; potential for support find.");
-            }
-        }
-
-        // --- NEW: Decisive Bull/Bear Trigger Calculation ---
-        const atr = last.atr || (price * 0.02);
-        const recentHighs = filteredPrices.slice(-20).map(p => p.high);
-        const recentLows = filteredPrices.slice(-20).map(p => p.low);
-        const maxHigh = Math.max(...recentHighs);
-        const minLow = Math.min(...recentLows);
-
-        // Adaptive sentiment buffer: -40 to +40 score range affects the multiplier (0.5 to 2.0 ATR)
-        const sentimentMultiplier = 1.5 - ((score / 100) * 0.5); // Bullish score lowers bull trigger multiplier
-        const bullLevel = Math.max(maxHigh, (last.ema20 || price) + (atr * sentimentMultiplier));
-        const bearLevel = Math.min(minLow, (last.ema20 || price) - (atr * sentimentMultiplier));
-
-        reasons.push(`Bull Trigger (${currencySymbol}${bullLevel.toFixed(2)}): Calculated using a synthesized blend of 20-period resistance and ATR-weighted volatility (${sentimentMultiplier.toFixed(1)}x sigma). Crossing this level confirms structural breakout momentum.`);
-        reasons.push(`Bear Trigger (${currencySymbol}${bearLevel.toFixed(2)}): Set at the confluence of recent support lows and institutional distribution zones. A breach indicates a failure of the current technical floor.`);
-
-        // Final Labeling
         let label = "Neutral";
         let color = "text-slate-400";
-        if (score > 40) { label = "Strongly Bullish"; color = "text-emerald-400"; }
-        else if (score > 10) { label = "Bullish"; color = "text-emerald-500/70"; }
-        else if (score < -40) { label = "Strongly Bearish"; color = "text-rose-400"; }
-        else if (score < -10) { label = "Bearish"; color = "text-rose-500/70"; }
+        if (wpb > 0.1) { label = "Bullish"; color = "text-emerald-500"; }
+        else if (wpb < -0.1) { label = "Bearish"; color = "text-rose-500"; }
 
-        return { score, label, color, reasons, adx, rsi, stoch, bullLevel, bearLevel };
+        // Trigger Synthesis using Adaptive Sigma Multiplier
+        const atr = last.atr || (price * 0.02);
+        const sigma = 1.5 - (wpb * 0.5);
+        const bodySlice = filteredPrices.slice(-20);
+        const maxHigh = Math.max(...bodySlice.map(s => s.high));
+        const minLow = Math.min(...bodySlice.map(s => s.low));
+
+        const bullLevel = Math.max(maxHigh, (last.ema20 || price) + (atr * sigma));
+        const bearLevel = Math.min(minLow, (last.ema20 || price) - (atr * sigma));
+
+        // Validation Logic Gates for Reason Logs
+        if (last.vwap) {
+            if (price > last.vwap) reasons.push("Institutional Anchor: Price relative to VWAP confirms active accumulation.");
+            else reasons.push("Institutional Anchor: Price relative to VWAP indicates active distribution/selling.");
+        }
+
+        if (last.force > 0) reasons.push("Force Index: Conviction (Volume + Price Delta) supports Bullish trajectory.");
+        if (last.ao > 0) reasons.push("Momentum Cycles: Awesome Oscillator confirms short-term velocity exceeds long-term trend.");
+
+        return { score, label, color, reasons, bullLevel, bearLevel, wpb };
     }, [filteredPrices, currencySymbol]);
 
     const projectionData = useMemo(() => {
@@ -575,6 +656,48 @@ export function PriceChart({
     const combinedData = useMemo(() => {
         return [...filteredPrices, ...projectionData];
     }, [filteredPrices, projectionData]);
+
+    const handleDownloadCSV = () => {
+        if (!dataWithIndicators.length) return;
+
+        const headers = [
+            "Date", "Open", "High", "Low", "Close", "Volume",
+            "SMA20", "SMA50", "EMA20", "EMA50", "VWAP", "PSAR",
+            "RSI", "MACD", "MACD_Signal", "MACD_Hist",
+            "BB_Upper", "BB_Lower", "BB_Middle",
+            "ADX", "ADX_PDI", "ADX_MDI",
+            "Stoch_K", "Stoch_D",
+            "ATR", "MFI", "OBV", "TRIX", "CCI", "ROC", "KST", "ADL", "Force", "AO", "WilliamsR",
+            "Pattern_Name", "Pattern_Type",
+            "Bull_Trigger", "Bear_Trigger", "Bias_Score", "Predicted_Direction"
+        ];
+
+        const rows = dataWithIndicators.map(p => {
+            const date = new Date(p.date).toISOString().split('T')[0];
+            return [
+                date, p.open, p.high, p.low, p.close, p.volume,
+                p.sma20, p.sma50, p.ema20, p.ema50, p.vwap, p.psar,
+                p.rsi, p.macd?.MACD, p.macd?.signal, p.macd?.histogram,
+                p.bb?.upper, p.bb?.lower, p.bb?.middle,
+                p.adx?.adx, p.adx?.pdi, p.adx?.mdi,
+                p.stoch?.k, p.stoch?.d,
+                p.atr, p.mfi, p.obv, p.trix, p.cci, p.roc, p.kst?.kst, p.adl, p.force, p.ao, p.wr,
+                p.pattern?.name || '', p.pattern?.type || '',
+                p.bullTrigger, p.bearTrigger, p.directionScore, p.predictedDirection
+            ].map(v => v === undefined || v === null ? '' : v).join(',');
+        });
+
+        const csvContent = [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        link.setAttribute("href", url);
+        link.setAttribute("download", `${tickerData?.ticker || selectedSymbol}_FULL_DATA.csv`);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     const currentPrice = prices.length > 0 ? prices[prices.length - 1].close : null;
 
@@ -691,7 +814,7 @@ export function PriceChart({
                             </div>
                             <div className="h-8 w-px bg-white/5" />
                             <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/5">
-                                {['1M', '6M', '1Y', '5Y', 'MAX'].map((t) => (
+                                {['1M', '6M', '1Y'].map((t) => (
                                     <button
                                         key={t}
                                         onClick={() => setChartTimeframe(t)}
@@ -770,6 +893,7 @@ export function PriceChart({
                                                 { label: 'AO', active: showAO, onClick: () => setShowAO(!showAO) },
                                                 { label: 'PROJ', active: showProjections, onClick: () => setShowProjections(!showProjections) },
                                                 { label: 'VOL', active: showVolume, onClick: () => setShowVolume(!showVolume) },
+                                                { label: 'PATTERNS', active: showPatterns, onClick: () => setShowPatterns(!showPatterns) },
                                             ].map((btn) => (
                                                 <button
                                                     key={btn.label}
@@ -813,7 +937,7 @@ export function PriceChart({
                     <div className="flex-1 w-full bg-[#020617] relative flex flex-row overflow-hidden">
                         <div className="flex-1 flex flex-col min-w-0">
                             {/* Main Price Chart - Increased Height & Elevated Z-Index */}
-                            <div className="h-[600px] shrink-0 pt-6 pr-6 pb-2 overflow-visible bg-slate-950/20 relative z-20">
+                            <div ref={terminalChartRef} className="h-[600px] shrink-0 pt-6 pr-6 pb-2 overflow-visible bg-slate-950/20 relative z-20">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <ComposedChart data={combinedData} margin={{ top: 20, right: 20, left: 20, bottom: 0 }}>
                                         <defs>
@@ -877,15 +1001,28 @@ export function PriceChart({
 
                                         <RechartsTooltip
                                             cursor={{ stroke: 'rgba(255,255,255,0.2)', strokeWidth: 1 }}
-                                            content={({ active, payload }) => {
+                                            content={({ active, payload, coordinate }) => {
                                                 if (!active || !payload || !payload.length || typeof document === 'undefined') return null;
                                                 const data = payload[0].payload;
                                                 const dateStr = new Date(data.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
                                                 const vol = data.volume;
                                                 const isProj = data.isProjection;
 
+                                                const rect = terminalChartRef.current?.getBoundingClientRect();
+                                                const x = (rect?.left || 0) + (coordinate?.x ?? 0);
+                                                const y = (rect?.top || 0) + (coordinate?.y ?? 0);
+
                                                 return createPortal(
-                                                    <div className="fixed top-24 left-8 z-[10001] bg-slate-950/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-4 flex flex-col gap-3 min-w-[260px] animate-in fade-in zoom-in-95 duration-200">
+                                                    <div
+                                                        style={{
+                                                            position: 'fixed',
+                                                            left: x > window.innerWidth - 300 ? (x - 280) : (x + 20),
+                                                            top: y > window.innerHeight - 300 ? (y - 120) : (y + 20),
+                                                            pointerEvents: 'none',
+                                                            transition: 'all 0.1s ease-out'
+                                                        }}
+                                                        className="z-[10001] bg-slate-950/95 backdrop-blur-xl border border-white/20 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-4 flex flex-col gap-3 min-w-[260px] animate-in fade-in zoom-in-95 duration-200"
+                                                    >
                                                         <div className="flex flex-col">
                                                             <div className="flex items-center justify-between">
                                                                 <span className="text-[10px] uppercase font-black text-slate-500 tracking-[0.2em]">{dateStr}</span>
@@ -895,7 +1032,18 @@ export function PriceChart({
                                                             </div>
                                                             {!isProj && (
                                                                 <div className="text-2xl font-black font-mono tracking-tighter mt-1 text-white">
-                                                                    {currencySymbol}{Number(data.close).toFixed(2)}
+                                                                    {Number(data.close).toFixed(2)}
+                                                                </div>
+                                                            )}
+
+                                                            {data.pattern && (
+                                                                <div className={cn("mt-2 px-2 py-1 rounded bg-white/5 border flex items-center gap-2",
+                                                                    data.pattern.type === 'bull' ? "border-emerald-500/30 text-emerald-400" :
+                                                                        data.pattern.type === 'bear' ? "border-rose-500/30 text-rose-400" :
+                                                                            "border-amber-500/30 text-amber-400"
+                                                                )}>
+                                                                    <ScanEye className="w-3 h-3" />
+                                                                    <span className="text-[9px] font-black uppercase tracking-wider">{data.pattern.name} Detected</span>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -990,32 +1138,49 @@ export function PriceChart({
 
                                                         {!isProj && data.bullTrigger !== undefined && (
                                                             <div className="flex flex-col gap-2 border-t border-white/10 pt-3">
-                                                                <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Threshold Integrity (1W)</div>
+                                                                <div className="flex items-center justify-between mb-1">
+                                                                    <div className="text-[8px] font-black text-indigo-400 uppercase tracking-[0.2em]">Signal Validation Profile (1W)</div>
+                                                                    <span className="text-[7px] text-slate-600 font-mono tracking-tighter">V3.0 ENGINE</span>
+                                                                </div>
+
                                                                 <div className="flex items-center justify-between">
                                                                     <div className="flex items-center gap-2">
                                                                         <div className={cn("w-1.5 h-1.5 rounded-full", data.bullAccuracy === 100 ? "bg-emerald-500" : "bg-rose-500")} />
-                                                                        <span className="text-[9px] text-slate-400 font-bold uppercase">Bull Trigger Accuracy</span>
+                                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Upside Target Integrity</span>
                                                                     </div>
                                                                     <span className="text-[9px] text-white font-mono">{data.bullAccuracy}%</span>
                                                                 </div>
+
                                                                 <div className="flex items-center justify-between">
                                                                     <div className="flex items-center gap-2">
                                                                         <div className={cn("w-1.5 h-1.5 rounded-full", data.bearAccuracy === 100 ? "bg-emerald-500" : "bg-rose-500")} />
-                                                                        <span className="text-[9px] text-slate-400 font-bold uppercase">Bear Trigger Accuracy</span>
+                                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Downside Floor Integrity</span>
                                                                     </div>
                                                                     <span className="text-[9px] text-white font-mono">{data.bearAccuracy}%</span>
                                                                 </div>
+
+                                                                <div className="flex items-center justify-between">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <div className={cn("w-1.5 h-1.5 rounded-full", data.directionAccuracy === 100 ? "bg-indigo-500" : "bg-slate-500")} />
+                                                                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">Market Bias Precision ({data.predictedDirection})</span>
+                                                                    </div>
+                                                                    <span className="text-[9px] text-white font-mono">{data.directionAccuracy}%</span>
+                                                                </div>
+
                                                                 <div className="flex gap-2 mt-1">
                                                                     {data.bullHit && (
-                                                                        <span className="text-[7px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-500/20 font-black uppercase">Bullish Breach</span>
+                                                                        <span className="text-[7px] bg-emerald-500/10 text-emerald-500 px-1.5 py-0.5 rounded border border-emerald-500/20 font-black uppercase">Resistance Breached</span>
                                                                     )}
                                                                     {data.bearHit && (
-                                                                        <span className="text-[7px] bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded border border-rose-500/20 font-black uppercase">Bearish Breach</span>
+                                                                        <span className="text-[7px] bg-rose-500/10 text-rose-500 px-1.5 py-0.5 rounded border border-rose-500/20 font-black uppercase">Support Breached</span>
                                                                     )}
-                                                                    {!data.bullHit && !data.bearHit && (
-                                                                        <span className="text-[7px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20 font-black uppercase">Range Maintained</span>
+                                                                    {data.directionAccuracy === 100 && (
+                                                                        <span className="text-[7px] bg-indigo-500/10 text-indigo-400 px-1.5 py-0.5 rounded border border-indigo-500/20 font-black uppercase">Forecast Verified</span>
                                                                     )}
                                                                 </div>
+                                                                {!data.bullHit && !data.bearHit && (
+                                                                    <div className="text-[7px] text-slate-600 font-mono italic">Predictive price bands held active.</div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>,
@@ -1112,6 +1277,14 @@ export function PriceChart({
 
                                         {showVolume && (
                                             <Bar yAxisId="volume" dataKey="volume" fill="#eab308" fillOpacity={0.4} radius={[1, 1, 0, 0]} animationDuration={500} />
+                                        )}
+                                        {showPatterns && (
+                                            <Scatter
+                                                yAxisId="price"
+                                                dataKey="patternY"
+                                                shape={<PatternShape />}
+                                                isAnimationActive={false}
+                                            />
                                         )}
                                     </ComposedChart>
                                 </ResponsiveContainer>
@@ -1407,6 +1580,15 @@ export function PriceChart({
                                         </div>
                                     )}
                                 </div>
+                                <div className="h-8 w-px bg-white/5" />
+                                <button
+                                    onClick={handleDownloadCSV}
+                                    className="flex items-center gap-2 px-4 py-1.5 text-[10px] font-black rounded-xl transition-all border shrink-0 bg-emerald-500/10 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    <span>EXPORT DATA</span>
+                                </button>
+
                                 <div className="flex items-center gap-4">
                                     <span className="text-[9px] font-mono text-slate-600">PROMETHEUS_TA_ENGINE_v1.2</span>
                                     <span className="text-[9px] font-mono text-emerald-500/40">SENSORS_STABLE</span>
@@ -1539,7 +1721,10 @@ export function PriceChart({
                                             <div className="space-y-4">
                                                 <div className="flex flex-col gap-2 mb-2 p-3 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
                                                     <div className="flex items-center justify-between">
-                                                        <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest">Global Integrity Rate</span>
+                                                        <span className="text-[9px] text-slate-400 font-black uppercase tracking-widest flex items-center gap-1.5">
+                                                            Engine Integrity (V3.0)
+                                                            <span className="text-[7px] text-indigo-400/50 bg-indigo-400/5 px-1 rounded border border-indigo-400/10">ADVANCED</span>
+                                                        </span>
                                                         <span className="text-[10px] font-black font-mono text-indigo-400">{aggregateAccuracy.overall.toFixed(1)}%</span>
                                                     </div>
                                                     <div className="h-1 w-full bg-slate-900 rounded-full overflow-hidden">
@@ -1550,13 +1735,53 @@ export function PriceChart({
                                                     </div>
                                                     <div className="flex items-center justify-between mt-1">
                                                         <div className="flex items-center gap-1.5">
-                                                            <div className="w-1 h-1 rounded-full bg-emerald-500" />
-                                                            <span className="text-[7px] text-slate-500 font-bold uppercase">Bull {aggregateAccuracy.bull.toFixed(0)}%</span>
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                                            <span className="text-[8px] text-slate-400 font-bold uppercase">Bullish {aggregateAccuracy.bull.toFixed(0)}%</span>
                                                         </div>
                                                         <div className="flex items-center gap-1.5">
-                                                            <div className="w-1 h-1 rounded-full bg-rose-500" />
-                                                            <span className="text-[7px] text-slate-500 font-bold uppercase">Bear {aggregateAccuracy.bear.toFixed(0)}%</span>
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                                                            <span className="text-[8px] text-slate-400 font-bold uppercase">Bias {(aggregateAccuracy.direction || 0).toFixed(0)}%</span>
                                                         </div>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                                            <span className="text-[8px] text-slate-400 font-bold uppercase">Bearish {aggregateAccuracy.bear.toFixed(0)}%</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-4">
+                                                    <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5 space-y-4">
+                                                        <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                                                            <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Time Horizon Accuracy</span>
+                                                            <span className="text-[8px] text-indigo-400 bg-indigo-400/10 px-2 py-0.5 rounded font-bold uppercase">Backtest Log</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-y-3 gap-x-8">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[9px] text-slate-500 font-bold uppercase">3-Day</span>
+                                                                <span className="text-[10px] font-black font-mono text-slate-300">{(aggregateAccuracy.h3d || 0).toFixed(1)}%</span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[9px] text-slate-500 font-bold uppercase">1-Week</span>
+                                                                <span className="text-[10px] font-black font-mono text-indigo-400">{(aggregateAccuracy.h1w || 0).toFixed(1)}%</span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[9px] text-slate-500 font-bold uppercase">2-Week</span>
+                                                                <span className="text-[10px] font-black font-mono text-slate-300">{(aggregateAccuracy.h2w || 0).toFixed(1)}%</span>
+                                                            </div>
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-[9px] text-slate-500 font-bold uppercase">1-Month</span>
+                                                                <span className="text-[10px] font-black font-mono text-slate-300">{(aggregateAccuracy.h1m || 0).toFixed(1)}%</span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col gap-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <p className="text-[8px] text-slate-400 uppercase font-black">Predicted Bias (1W)</p>
+                                                        <span className={cn("text-[10px] font-black uppercase tracking-tighter", consensusEngine?.color || "text-slate-400")}>
+                                                            {consensusEngine?.label || '---'}
+                                                        </span>
                                                     </div>
                                                 </div>
 
