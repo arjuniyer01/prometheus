@@ -29,6 +29,12 @@ export interface Ohlc {
     volume: number;
 }
 
+export interface SRLevel {
+    price: number;
+    type: 'support' | 'resistance';
+    strength: number;
+}
+
 export interface TechnicalAnalysisResult {
     predictionBias: {
         score: number;
@@ -57,6 +63,7 @@ export interface TechnicalAnalysisResult {
             distributionConfirmation: boolean;
         };
     };
+    levels: SRLevel[];
     indicators: any;
 }
 
@@ -86,6 +93,62 @@ function calculateDonchian(highs: number[], lows: number[], period: number) {
         results.push({ upper, lower, middle: (upper + lower) / 2 });
     }
     return results;
+}
+
+export function calculateSRLevels(highs: number[], lows: number[], closes: number[], atr: number): SRLevel[] {
+    const window = 2;
+    const pivots: { price: number; type: 'support' | 'resistance' }[] = [];
+
+    for (let i = window; i < highs.length - window; i++) {
+        const h = highs[i];
+        const l = lows[i];
+
+        if (h > highs[i - 1] && h > highs[i - 2] && h >= highs[i + 1] && h >= highs[i + 2]) {
+            pivots.push({ price: h, type: 'resistance' });
+        }
+        if (l < lows[i - 1] && l < lows[i - 2] && l <= lows[i + 1] && l <= lows[i + 2]) {
+            pivots.push({ price: l, type: 'support' });
+        }
+    }
+
+    if (pivots.length === 0) {
+        const recentHighs = highs.slice(-50);
+        const recentLows = lows.slice(-50);
+        return [
+            { price: Math.max(...recentHighs), type: 'resistance' as const, strength: 1 },
+            { price: Math.min(...recentLows), type: 'support' as const, strength: 1 }
+        ].map(l => ({ ...l, price: Number(l.price.toFixed(2)) }));
+    }
+
+    const currentPrice = closes[closes.length - 1];
+    const proximity = atr > 0 ? atr * 0.75 : currentPrice * 0.01;
+    const clusters: { price: number; type: 'support' | 'resistance'; count: number }[] = [];
+
+    pivots.forEach(pivot => {
+        let found = false;
+        for (const cluster of clusters) {
+            if (Math.abs(cluster.price - pivot.price) < proximity && cluster.type === pivot.type) {
+                cluster.price = (cluster.price * cluster.count + pivot.price) / (cluster.count + 1);
+                cluster.count++;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            clusters.push({ price: pivot.price, type: pivot.type, count: 1 });
+        }
+    });
+
+    const maxCount = Math.max(...clusters.map(c => c.count));
+
+    return clusters
+        .map(c => ({
+            price: Number(c.price.toFixed(2)),
+            type: c.type,
+            strength: c.count / maxCount
+        }))
+        .sort((a, b) => Math.abs(a.price - currentPrice) - Math.abs(b.price - currentPrice))
+        .slice(0, 10);
 }
 
 // ----------------------------------------------------------------------
@@ -341,6 +404,9 @@ export function calculateTechnicalAnalysis(prices: Ohlc[]): TechnicalAnalysisRes
     // 7. Bollinger Bands
     const bb = BollingerBands.calculate({ period: 20, values: close, stdDev: 2 });
 
+    // NEW: ATR for SR Proximity
+    const atr_vec = ATR.calculate({ high, low, close, period: 14 });
+
     // 8. Force Index
     const fi = ForceIndex.calculate({ close, volume, period: 13 });
 
@@ -474,6 +540,7 @@ export function calculateTechnicalAnalysis(prices: Ohlc[]): TechnicalAnalysisRes
                 distributionConfirmation: adlTrendingDown
             }
         },
+        levels: calculateSRLevels(high, low, close, getLast(atr_vec) || 0),
         indicators: {
             rcl: curPrice,
             ema20: curEMA20,

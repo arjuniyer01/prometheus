@@ -14,12 +14,15 @@ import {
     ResponsiveContainer,
     Brush,
     Scatter,
+    ReferenceLine,
+    Label,
 } from "recharts";
 import { createPortal } from "react-dom";
 import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers, ScanEye, Download } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
 import { RSI, MACD, BollingerBands, EMA, ADX, ATR, Stochastic, WilliamsR, MFI, OBV, TRIX, VWAP, CCI, ROC, KST, PSAR, ADL, ForceIndex, AwesomeOscillator } from "technicalindicators";
+import { calculateSRLevels } from "@/lib/technical-analysis";
 
 
 const PatternShape = (props: any) => {
@@ -158,6 +161,7 @@ export function PriceChart({
     const [showADL, setShowADL] = useState(true);
     const [showForce, setShowForce] = useState(true);
     const [showAO, setShowAO] = useState(true);
+    const [showSR, setShowSR] = useState(true);
     const [showPatterns, setShowPatterns] = useState(false);
     const terminalChartRef = useRef<HTMLDivElement>(null);
 
@@ -349,8 +353,17 @@ export function PriceChart({
             };
         });
 
+        // 21. Support and Resistance Levels
+        const latestATR = paddedATR[paddedATR.length - 1] || 0;
+        const srLevels = calculateSRLevels(highPrices, lowPrices, closePrices, latestATR);
+
         // Pass 2: Historical Trigger Mapping (Quantitative Architecture Implementation)
         const withLevels = data.map((p, idx) => {
+            return {
+                ...p,
+                srLevels: srLevels // Attach global levels to each point for easy access if needed, or just use globally
+            };
+        }).map((p, idx) => {
             if (idx < 60) return { ...p, directionScore: 0, predictedDirection: "Neutral" }; // Wait for Z-score maturity
 
             // 1. Continuous Trend Component (Ts)
@@ -775,6 +788,7 @@ export function PriceChart({
                                         );
                                     }}
                                 />
+                                <YAxis hide />
                                 <Area
                                     type="monotone"
                                     dataKey="close"
@@ -783,6 +797,17 @@ export function PriceChart({
                                     fillOpacity={1}
                                     fill="url(#colorPrice)"
                                 />
+
+                                {showSR && filteredPrices.length > 0 && filteredPrices[filteredPrices.length - 1]?.srLevels?.map((level: any, i: number) => (
+                                    <ReferenceLine
+                                        key={`mini-sr-${i}`}
+                                        y={level.price}
+                                        stroke={level.type === 'support' ? '#10b981' : '#f43f5e'}
+                                        strokeDasharray="2 2"
+                                        strokeOpacity={0.2}
+                                        strokeWidth={1}
+                                    />
+                                ))}
                             </AreaChart>
                         </ResponsiveContainer>
                     ) : (
@@ -875,25 +900,11 @@ export function PriceChart({
                                                 { label: 'EMA', active: showEMA, onClick: () => setShowEMA(!showEMA) },
                                                 { label: 'VWAP', active: showVWAP, onClick: () => setShowVWAP(!showVWAP) },
                                                 { label: 'BB', active: showBB, onClick: () => setShowBB(!showBB) },
-                                                { label: 'RSI', active: showRSI, onClick: () => setShowRSI(!showRSI) },
-                                                { label: 'MACD', active: showMACD, onClick: () => setShowMACD(!showMACD) },
-                                                { label: 'STOCH', active: showStoch, onClick: () => setShowStoch(!showStoch) },
-                                                { label: 'WR', active: showWR, onClick: () => setShowWR(!showWR) },
-                                                { label: 'MFI', active: showMFI, onClick: () => setShowMFI(!showMFI) },
-                                                { label: 'ADX', active: showADX, onClick: () => setShowADX(!showADX) },
-                                                { label: 'CCI', active: showCCI, onClick: () => setShowCCI(!showCCI) },
-                                                { label: 'ATR', active: showATR, onClick: () => setShowATR(!showATR) },
-                                                { label: 'OBV', active: showOBV, onClick: () => setShowOBV(!showOBV) },
-                                                { label: 'TRIX', active: showTRIX, onClick: () => setShowTRIX(!showTRIX) },
-                                                { label: 'ROC', active: showROC, onClick: () => setShowROC(!showROC) },
-                                                { label: 'KST', active: showKST, onClick: () => setShowKST(!showKST) },
                                                 { label: 'PSAR', active: showPSAR, onClick: () => setShowPSAR(!showPSAR) },
-                                                { label: 'ADL', active: showADL, onClick: () => setShowADL(!showADL) },
-                                                { label: 'FORCE', active: showForce, onClick: () => setShowForce(!showForce) },
-                                                { label: 'AO', active: showAO, onClick: () => setShowAO(!showAO) },
                                                 { label: 'PROJ', active: showProjections, onClick: () => setShowProjections(!showProjections) },
                                                 { label: 'VOL', active: showVolume, onClick: () => setShowVolume(!showVolume) },
                                                 { label: 'PATTERNS', active: showPatterns, onClick: () => setShowPatterns(!showPatterns) },
+                                                { label: 'S/R', active: showSR, onClick: () => setShowSR(!showSR) },
                                             ].map((btn) => (
                                                 <button
                                                     key={btn.label}
@@ -1252,6 +1263,27 @@ export function PriceChart({
                                             </>
                                         )}
 
+                                        {showSR && filteredPrices.length > 0 && filteredPrices[filteredPrices.length - 1]?.srLevels?.map((level: any, i: number) => (
+                                            <ReferenceLine
+                                                key={`sr-${i}`}
+                                                yAxisId="price"
+                                                y={level.price}
+                                                stroke={level.type === 'support' ? '#10b981' : '#f43f5e'}
+                                                strokeDasharray="3 3"
+                                                strokeOpacity={0.4 + (level.strength * 0.4)}
+                                                strokeWidth={1}
+                                            >
+                                                <Label
+                                                    value={`${level.type === 'support' ? 'SUP' : 'RES'} ${level.price}`}
+                                                    position="insideRight"
+                                                    fill={level.type === 'support' ? '#10b981' : '#f43f5e'}
+                                                    fontSize={7}
+                                                    fontWeight="bold"
+                                                    offset={5}
+                                                />
+                                            </ReferenceLine>
+                                        ))}
+
                                         {showPSAR && (
                                             <Line yAxisId="price" type="monotone" dataKey="psar" name="PSAR" stroke="#facc15" strokeWidth={0} dot={{ r: 1.5, fill: '#facc15' }} animationDuration={1000} />
                                         )}
@@ -1286,6 +1318,7 @@ export function PriceChart({
                                                 isAnimationActive={false}
                                             />
                                         )}
+
                                     </ComposedChart>
                                 </ResponsiveContainer>
                             </div>

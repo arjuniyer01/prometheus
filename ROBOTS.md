@@ -107,6 +107,10 @@ We use a highly customized implementation of Recharts to achieve financial-grade
     *   **Zooms**: Managed via a styled `<Brush>` component (Height: 30px, Handle: 15px).
     *   **Tooltips**: Use 3-decimal precision (`.toFixed(3)`) for all tooltip metrics.
     *   **Controls**: dedicated "Chart Analysis" button for expanding the view; do not use hover-overlay icons.
+4.  **Sensor Management Protocol**:
+    *   The **TECHNICAL SENSORS** dropdown is reserved strictly for **Main Chart Overlays** (SMA, EMA, VWAP, BB, PSAR, PROJ, VOL, PATTERNS, S/R).
+    *   **Support & Resistance (S/R)**: Calculated using local price pivots (fractals) clustered by ATR-based proximity. Only high-strength levels (tested multiple times) are displayed to ensure reliability.
+    *   **Sub-chart indicators** (RSI, MACD, AO, Force, KST, ROC, MFI, Stoch, WR, CCI, OBV, ADX, ATR, ADL, TRIX) which render in separate panes below the price chart are **Always On** and removed from the toggle list to ensure terminal data depth is permanently visible.
 
 #### G. News & Sentiment Aggregation
 We do not rely on standard API news endpoints (often delayed or limited).
