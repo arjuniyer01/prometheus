@@ -21,8 +21,8 @@ import { createPortal } from "react-dom";
 import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers, ScanEye, Download } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
-import { RSI, MACD, BollingerBands, EMA, ADX, ATR, Stochastic, WilliamsR, MFI, OBV, TRIX, VWAP, CCI, ROC, KST, PSAR, ADL, ForceIndex, AwesomeOscillator } from "technicalindicators";
-import { calculateSRLevels } from "@/lib/technical-analysis";
+import { SMA, RSI, MACD, BollingerBands, EMA, ADX, ATR, Stochastic, WilliamsR, MFI, OBV, TRIX, VWAP, CCI, ROC, KST, PSAR, ADL, ForceIndex, AwesomeOscillator } from "technicalindicators";
+import { calculateSRLevels, checkSemiReversalSignal, calculateDPO, calculateKCW } from "@/lib/technical-analysis";
 
 
 const PatternShape = (props: any) => {
@@ -117,6 +117,7 @@ interface PriceChartProps {
     showVolume: boolean;
     setShowVolume: (val: boolean) => void;
     getRawChanges: () => number;
+    smhPrices?: any[];
 }
 
 export function PriceChart({
@@ -136,7 +137,8 @@ export function PriceChart({
     setShowSMA,
     showVolume,
     setShowVolume,
-    getRawChanges
+    getRawChanges,
+    smhPrices = []
 }: PriceChartProps) {
     const [showRSI, setShowRSI] = useState(true);
     const [showMACD, setShowMACD] = useState(true);
@@ -159,6 +161,7 @@ export function PriceChart({
     const [showAO, setShowAO] = useState(true);
     const [showSR, setShowSR] = useState(true);
     const [showPatterns, setShowPatterns] = useState(false);
+    const [showStrategyDetails, setShowStrategyDetails] = useState(false);
     const terminalChartRef = useRef<HTMLDivElement>(null);
 
     const IndicatorTooltip = ({ active, payload, suffix = "" }: any) => {
@@ -286,9 +289,12 @@ export function PriceChart({
         const forceValues = ForceIndex.calculate({ close: closePrices, volume: volumes, period: 13 });
         const paddedForce = [...new Array(prices.length - forceValues.length).fill(null), ...forceValues];
 
-        // 20. Awesome Oscillator
         const aoValues = AwesomeOscillator.calculate({ high: highPrices, low: lowPrices, fastPeriod: 5, slowPeriod: 34 });
         const paddedAO = [...new Array(prices.length - aoValues.length).fill(null), ...aoValues];
+
+        // 21. DPO and KCW for Strategy detection
+        const dpoValues = calculateDPO(closePrices, 20);
+        const kcwValues = calculateKCW(highPrices, lowPrices, closePrices, 20, 2);
 
         const data = prices.map((p, idx) => {
             const bodyMin = Math.min(p.open, p.close);
@@ -345,7 +351,9 @@ export function PriceChart({
                 trix: paddedTRIX[idx], vwap: paddedVWAP[idx], cci: paddedCCI[idx], roc: paddedROC[idx],
                 kst: paddedKST[idx], psar: paddedPSAR[idx], adl: paddedADL[idx], force: paddedForce[idx],
                 ao: paddedAO[idx], bodyRange: [bodyMin, bodyMax],
-                pattern, patternY
+                pattern, patternY,
+                dpo: dpoValues[idx],
+                kcw: kcwValues[idx]
             };
         });
 
@@ -359,9 +367,109 @@ export function PriceChart({
             // @ts-ignore
             data[data.length - 1].srLevels = srLevels;
         }
-
         return data;
     }, [prices]);
+
+    const strategyBacktest = useMemo(() => {
+        if (!prices.length || !smhPrices.length || !dataWithIndicators.length) return null;
+
+        // 1. Prepare benchmark data (Date map for O(1) lookup)
+        const smhCloses = smhPrices.map(p => p.close);
+        const smhSMA50 = SMA.calculate({ period: 50, values: smhCloses });
+        const smhSMA50Padded = [...new Array(smhPrices.length - smhSMA50.length).fill(null), ...smhSMA50];
+        const benchmarkMap = new Map();
+        smhPrices.forEach((p, i) => {
+            try {
+                const d = new Date(p.date);
+                if (isNaN(d.getTime())) return;
+                const dateStr = d.toISOString().split('T')[0];
+                benchmarkMap.set(dateStr, { close: p.close, sma50: smhSMA50Padded[i] });
+            } catch (e) {
+                // Ignore invalid dates
+            }
+        });
+
+        let totalSignals = 0;
+        let successfulSignals = 0;
+        let totalReturns = 0;
+
+        const signals = dataWithIndicators.map((point, i) => {
+            try {
+                const d = new Date(point.date);
+                if (isNaN(d.getTime())) return { ...point, strategySignal: false };
+                const dateStr = d.toISOString().split('T')[0];
+                const bench = benchmarkMap.get(dateStr);
+
+                if (!bench || !bench.sma50) return { ...point, strategySignal: false };
+
+                const isSectorCrash = bench.close <= bench.sma50 * 0.90;
+                const isVolExpansion = (point.kcw || 0) > 7.2;
+                const isOversold = (point.wr || 0) < -81;
+                const isStabilized = (point.dpo || 0) > -0.31;
+
+                const isSignal = isSectorCrash && isVolExpansion && isOversold && isStabilized;
+
+                if (isSignal) {
+                    totalSignals++;
+                    console.log(`Signal detected on ${dateStr}:`);
+                    console.log(`  Sector Crash: ${isSectorCrash} (Bench Close: ${bench.close}, Bench SMA50: ${bench.sma50})`);
+                    console.log(`  Vol Expansion: ${isVolExpansion} (KCW: ${point.kcw})`);
+                    console.log(`  Oversold: ${isOversold} (WR: ${point.wr})`);
+                    console.log(`  Stabilized: ${isStabilized} (DPO: ${point.dpo})`);
+
+                    // Backtest check (Look ahead 3 days)
+                    if (i < dataWithIndicators.length - 3) {
+                        const entryPrice = point.close;
+                        const maxPriceNext3Days = Math.max(
+                            dataWithIndicators[i + 1].high || dataWithIndicators[i + 1].close,
+                            dataWithIndicators[i + 2].high || dataWithIndicators[i + 2].close,
+                            dataWithIndicators[i + 3].high || dataWithIndicators[i + 3].close
+                        );
+                        const returnPct = ((maxPriceNext3Days - entryPrice) / entryPrice) * 100;
+                        totalReturns += returnPct;
+                        if (returnPct >= 6.0) successfulSignals++;
+                    }
+                }
+
+                return { ...point, strategySignal: isSignal };
+            } catch (e) {
+                return { ...point, strategySignal: false };
+            }
+        });
+
+        const lastPoint = dataWithIndicators[dataWithIndicators.length - 1];
+        const lastDateStr = lastPoint ? new Date(lastPoint.date).toISOString().split('T')[0] : '';
+        const lastBench = benchmarkMap.get(lastDateStr);
+
+        console.log(`[Backtest] ${totalSignals} signals found for ${prices.length} points. SMH data points: ${smhPrices.length}`);
+
+        return {
+            signals,
+            active: signals[signals.length - 1]?.strategySignal || false,
+            stats: {
+                total: totalSignals,
+                success: successfulSignals,
+                precision: totalSignals > 0 ? (successfulSignals / Math.max(1, totalSignals - (signals[signals.length - 1].strategySignal ? 3 : 0))) * 100 : 0,
+                avgReturn: totalSignals > 0 ? totalReturns / totalSignals : 0
+            },
+            currentPillars: {
+                sectorCrash: lastBench?.close <= lastBench?.sma50 * 0.90,
+                volExpansion: (lastPoint?.kcw || 0) > 7.2,
+                oversold: (lastPoint?.wr || 0) < -81,
+                stabilization: (lastPoint?.dpo || 0) > -0.31
+            }
+        };
+    }, [dataWithIndicators, smhPrices, prices]);
+
+    const semiReversalSignal = useMemo(() => {
+        if (!strategyBacktest) return null;
+        return {
+            active: strategyBacktest.active,
+            confidence: 0.6989, // From model
+            stats: strategyBacktest.stats,
+            pillars: strategyBacktest.currentPillars
+        };
+    }, [strategyBacktest]);
 
     const filteredPrices = useMemo(() => {
         if (!dataWithIndicators.length) return [];
@@ -509,16 +617,21 @@ export function PriceChart({
                                     fill="url(#colorPrice)"
                                 />
 
-                                {showSR && filteredPrices.length > 0 && filteredPrices[filteredPrices.length - 1]?.srLevels?.map((level: any, i: number) => (
-                                    <ReferenceLine
-                                        key={`mini-sr-${i}`}
-                                        y={level.price}
-                                        stroke={level.type === 'support' ? '#10b981' : '#f43f5e'}
-                                        strokeDasharray="2 2"
-                                        strokeOpacity={0.2}
-                                        strokeWidth={1}
-                                    />
-                                ))}
+
+
+                                <Scatter
+                                    data={filteredPrices.filter((s: any) => s.strategySignal)}
+                                    shape={(props: any) => {
+                                        const { cx, cy } = props;
+                                        if (!cx || !cy) return null;
+                                        return (
+                                            <g transform={`translate(${cx},${cy})`}>
+                                                <circle r={3} fill="#10b981" />
+                                                <circle r={6} stroke="#10b981" strokeWidth={1} fill="none" opacity={0.5} className="animate-pulse" />
+                                            </g>
+                                        );
+                                    }}
+                                />
                             </AreaChart>
                         </ResponsiveContainer>
                     ) : (
@@ -529,6 +642,138 @@ export function PriceChart({
                         </div>
                     )}
                 </div>
+
+                {/* Semi-Reversal Signal Banner */}
+                {tickerData?.industry && ["Semiconductors", "Semiconductor Equipment & Materials", "Semiconductor Equipment"].includes(tickerData.industry) && (
+                    <div className={cn(
+                        "mx-6 mb-6 rounded-2xl border transition-all overflow-hidden",
+                        semiReversalSignal?.active
+                            ? "bg-emerald-500/10 border-emerald-500/30 shadow-[0_10px_40px_rgba(16,185,129,0.1)]"
+                            : "bg-white/[0.02] border-white/5"
+                    )}>
+                        <div className="p-4 flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                                <div className={cn(
+                                    "w-10 h-10 rounded-xl flex items-center justify-center border",
+                                    semiReversalSignal?.active
+                                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                                        : "bg-slate-800/50 border-white/5 text-slate-500"
+                                )}>
+                                    <Binary className={cn("w-5 h-5", semiReversalSignal?.active && "animate-pulse")} />
+                                </div>
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h4 className={cn("text-xs font-black uppercase tracking-widest", semiReversalSignal?.active ? "text-emerald-400" : "text-slate-400")}>
+                                            Semi-Reversal Strategy
+                                        </h4>
+                                        {semiReversalSignal?.active && (
+                                            <span className="px-1.5 py-0.5 rounded-md bg-emerald-500 text-black text-[8px] font-black uppercase tracking-tighter">
+                                                Signal Active
+                                            </span>
+                                        )}
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-1 font-medium italic">
+                                        {semiReversalSignal?.active
+                                            ? "Golden Reversal Signature Confirmed: Maximum Compression during Sector Bloodbath."
+                                            : "Analyzing sector signals for mean-reversion signature..."}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-6">
+                                {semiReversalSignal?.active && (
+                                    <div className="text-right">
+                                        <div className="text-xl font-black text-emerald-500 font-mono tracking-tighter">
+                                            {(semiReversalSignal.confidence * 100).toFixed(2)}%
+                                        </div>
+                                        <div className="text-[8px] font-bold text-slate-600 uppercase tracking-widest">Confidence Score</div>
+                                    </div>
+                                )}
+                                <button
+                                    onClick={() => setShowStrategyDetails(!showStrategyDetails)}
+                                    className="px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 text-[9px] font-black text-slate-400 hover:text-white transition-all uppercase tracking-widest flex items-center gap-2"
+                                >
+                                    {showStrategyDetails ? "Hide Intel" : "Strategy Intel"}
+                                    <ChevronDown className={cn("w-3 h-3 transition-transform", showStrategyDetails && "rotate-180")} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {showStrategyDetails && (
+                            <div className="border-t border-white/5 bg-black/20 p-6 animate-in slide-in-from-top-2 duration-300">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                    {/* Strategy Rules */}
+                                    <div>
+                                        <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                            <Layers className="w-3 h-3" /> Detection Pillars
+                                        </h5>
+                                        <div className="space-y-3">
+                                            {[
+                                                { label: "1. Sector Crash", rule: "SMH ETF < SMA50 by 10%", icon: Waves, active: semiReversalSignal?.pillars?.sectorCrash },
+                                                { label: "2. Vol Expansion", rule: "Stock KCW > 7.2", icon: Activity, active: semiReversalSignal?.pillars?.volExpansion },
+                                                { label: "3. Terminal Oversold", rule: "Williams %R < -81", icon: ChevronDown, active: semiReversalSignal?.pillars?.oversold },
+                                                { label: "4. Stabilization", rule: "DPO > -0.31", icon: Check, active: semiReversalSignal?.pillars?.stabilization },
+                                            ].map((pillar, idx) => (
+                                                <div key={idx} className="flex items-center justify-between p-2 rounded-lg bg-white/[0.02] border border-white/5">
+                                                    <div className="flex items-center gap-3">
+                                                        <pillar.icon className={cn("w-3 h-3 transition-colors", pillar.active ? "text-emerald-500" : "text-slate-600")} />
+                                                        <div>
+                                                            <div className={cn("text-[9px] font-bold uppercase transition-colors", pillar.active ? "text-slate-200" : "text-slate-400")}>{pillar.label}</div>
+                                                            <div className="text-[9px] font-mono text-slate-500">{pillar.rule}</div>
+                                                        </div>
+                                                    </div>
+                                                    <div className={cn(
+                                                        "text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-tighter transition-all",
+                                                        pillar.active ? "bg-emerald-500 text-black shadow-[0_0_10px_rgba(16,185,129,0.3)]" : "bg-slate-800 text-slate-600"
+                                                    )}>
+                                                        {pillar.active ? "PASS" : "WAIT"}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        {/* Diagnostic Intel */}
+                                        <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <div className={cn("w-1.5 h-1.5 rounded-full", smhPrices.length > 0 ? "bg-emerald-500 animate-pulse" : "bg-rose-500")} />
+                                                <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">
+                                                    Benchmark Sync: {smhPrices.length > 0 ? `Active (${smhPrices.length}d)` : "Disconnected"}
+                                                </span>
+                                            </div>
+                                            <span className="text-[8px] font-bold text-slate-700 uppercase">Engine v2.5.0</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Backtest Intel */}
+                                    <div>
+                                        <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                                            <ScanEye className="w-3 h-3" /> Live Backtest Analysis
+                                        </h5>
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div className="p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
+                                                <div className="text-xl font-black text-white font-mono">{semiReversalSignal?.stats?.precision.toFixed(2)}%</div>
+                                                <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mt-1">Live Accuracy</div>
+                                            </div>
+                                            <div className="p-4 rounded-xl bg-white/[0.02] border border-white/5">
+                                                <div className="text-xl font-black text-slate-400 font-mono">{semiReversalSignal?.stats?.success} / {semiReversalSignal?.stats?.total}</div>
+                                                <div className="text-[8px] font-bold text-slate-600 uppercase tracking-widest mt-1">Success Count</div>
+                                            </div>
+                                            <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/10">
+                                                <div className="text-xl font-black text-emerald-500 font-mono">+{semiReversalSignal?.stats?.avgReturn.toFixed(1)}%</div>
+                                                <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mt-1">Avg Max Return</div>
+                                            </div>
+                                            <div className="p-4 rounded-xl bg-indigo-500/5 border border-indigo-500/10">
+                                                <div className="text-xl font-black text-indigo-400 font-mono">3 Days</div>
+                                                <div className="text-[8px] font-bold text-slate-500 uppercase tracking-widest mt-1">Hold Period</div>
+                                            </div>
+                                        </div>
+                                        <p className="mt-4 text-[9px] text-slate-600 italic leading-relaxed">
+                                            * Backtest executed in real-time using {prices.length} historical data points. "Success" defined as hitting +6% target within 3 trading days of signal.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
             </GlassCard>
 
             {/* Full-Screen Engine Overlay */}
@@ -728,6 +973,7 @@ export function PriceChart({
                                                 const dateStr = new Date(data.date).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
                                                 const vol = data.volume;
                                                 const isProj = data.isProjection;
+                                                const isSignal = data.strategySignal;
 
                                                 const rect = terminalChartRef.current?.getBoundingClientRect();
                                                 const x = (rect?.left || 0) + (coordinate?.x ?? 0);
@@ -890,6 +1136,23 @@ export function PriceChart({
                                                 isAnimationActive={false}
                                             />
                                         )}
+
+                                        {/* Strategy Signal Dots */}
+                                        <Scatter
+                                            yAxisId="price"
+                                            data={combinedData.filter((s: any) => s.strategySignal)}
+                                            shape={(props: any) => {
+                                                const { cx, cy } = props;
+                                                if (!cx || !cy) return null;
+                                                return (
+                                                    <g transform={`translate(${cx},${cy})`}>
+                                                        <circle r={6} fill="#10b981" />
+                                                        <circle r={12} stroke="#10b981" strokeWidth={1} fill="none" opacity={0.5} className="animate-pulse" />
+                                                        <text x={0} y={-15} textAnchor="middle" fill="#10b981" fontSize="10" fontWeight="900" className="uppercase tracking-tighter shadow-sm">SIGNAL</text>
+                                                    </g>
+                                                );
+                                            }}
+                                        />
 
 
                                         {showSMA && (

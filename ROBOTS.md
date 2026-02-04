@@ -159,8 +159,22 @@ We do not rely on standard API news endpoints (often delayed or limited).
 *   **PDF Export**: Users request "Download Report" functionality.
 *   **Mobile Optimization**: The "Terminal" layout needs better responsiveness for vertical mobile screens.
 *   **Historical Comparison**: Ability to "Diff" the current AI report against one generated 3 months ago.
+*   **Sector Reversal Identification**: Model-based detection of mean-reversion spikes in specific sectors (Semiconductors).
 
-### 6. Troubleshooting
+### 7. Technical Analysis Strategies
+
+#### A. The "Semi-Reversal" Strategy (Golden Reversal Signature)
+Designed to predict +6% spikes in Semiconductor stocks (NVDA, AMD, TSM, etc.) within 3 trading days.
+*   **Implementation**: `checkSemiReversalSignal` in `src/lib/technical-analysis.ts`.
+*   **Pillars**:
+    1.  **Sector Crash**: SMH ETF <= SMA50(SMH) * 0.90.
+    2.  **Volatility Expansion**: Stock KCW (Keltner Channel Width) > 7.2.
+    3.  **Terminal Oversold**: Williams %R < -81.
+    4.  **Price Stabilization**: DPO (Detrended Price Oscillator) > -0.31.
+*   **UI Integration**: Premium banner in `PriceChart.tsx` visible only for Semiconductor industries.
+*   **Data Requirement**: Requires fetching `SMH` historical data as a benchmark.
+
+### 8. Troubleshooting
 *   **"Red Dot on Chart"**: This means the `Candle` component is receiving undefined `y` or `height` props. Ensure `dataKey="bodyRange"` is set on the generic `Bar` component logic in `page.tsx`.
 *   **"Missing Live Chart for Indian Stocks"**: Check if `market === 'INDIA'`. The UI handles adding the `.NS` suffix for the *link* to Yahoo, but the internal symbol lookup might need the raw ID.
 *   **"Synthesizing Forever"**: Check the Supabase `realtime` inspector. If Inngest fails silently, the UI may not receive the `completed` state. Check Vercel logs for timeout errors (Gemini taking >60s).

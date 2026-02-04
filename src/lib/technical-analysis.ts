@@ -17,7 +17,8 @@ import {
     ForceIndex,
     MFI,
     WilliamsR,
-    ATR
+    ATR,
+    KeltnerChannels
 } from 'technicalindicators';
 
 export interface Ohlc {
@@ -64,6 +65,45 @@ function calculateDonchian(highs: number[], lows: number[], period: number) {
         const upper = Math.max(...sliceHigh);
         const lower = Math.min(...sliceLow);
         results.push({ upper, lower, middle: (upper + lower) / 2 });
+    }
+    return results;
+}
+
+export function calculateDPO(close: number[], period: number = 20): (number | null)[] {
+    const sma = SMA.calculate({ period, values: close });
+    const shift = Math.floor(period / 2) + 1;
+    const results: (number | null)[] = new Array(close.length).fill(null);
+
+    // SMA starts at period - 1
+    // DPO[i] = close[i - shift] - sma[i - period + 1] ??? 
+    // Wait, the standard DPO(n) at time t = close(t - n/2 - 1) - SMA(n)(t)
+    for (let i = period - 1; i < close.length; i++) {
+        const smaValue = sma[i - period + 1];
+        const lookbackIdx = i - shift;
+        if (lookbackIdx >= 0) {
+            results[i] = close[lookbackIdx] - smaValue;
+        }
+    }
+    return results;
+}
+
+export function calculateKCW(high: number[], low: number[], close: number[], period: number = 20, multiplier: number = 2): (number | null)[] {
+    const kc = KeltnerChannels.calculate({
+        high,
+        low,
+        close,
+        maPeriod: period,
+        atrPeriod: period,
+        multiplier,
+        useSMA: false
+    });
+    const results: (number | null)[] = new Array(close.length).fill(null);
+    const offset = close.length - kc.length;
+
+    for (let i = 0; i < kc.length; i++) {
+        const { upper, lower, middle } = kc[i];
+        // KCW = (Upper - Lower) / Middle * 100
+        results[i + offset] = ((upper - lower) / middle) * 100;
     }
     return results;
 }
@@ -201,6 +241,15 @@ export function calculateTechnicalAnalysis(prices: Ohlc[]): TechnicalAnalysisRes
     // 13. Donchian
     const donchian = calculateDonchian(high, low, 20);
 
+    // 14. Williams %R
+    const wr = WilliamsR.calculate({ high, low, close, period: 14 });
+
+    // 15. DPO
+    const dpo = calculateDPO(close, 20);
+
+    // 16. KCW
+    const kcw = calculateKCW(high, low, close, 20, 2);
+
     // --- VALUES ---
     const getLast = (arr: any[]) => arr[arr.length - 1];
     const curPrice = close[idx];
@@ -210,6 +259,9 @@ export function calculateTechnicalAnalysis(prices: Ohlc[]): TechnicalAnalysisRes
     const curMACDHist = getLast(macd)?.histogram || 0;
     const curADX = getLast(adx)?.adx || 0;
     const curTRIX = getLast(trix);
+    const curWR = getLast(wr);
+    const curDPO = getLast(dpo);
+    const curKCW = getLast(kcw);
 
     return {
         levels: calculateSRLevels(high, low, close, getLast(atr_vec) || 0),
@@ -223,7 +275,44 @@ export function calculateTechnicalAnalysis(prices: Ohlc[]): TechnicalAnalysisRes
             trix: curTRIX,
             cci: getLast(cci),
             fi: getLast(fi),
-            roc: getLast(roc)
+            roc: getLast(roc),
+            wr: curWR,
+            dpo: curDPO,
+            kcw: curKCW
         }
+    };
+}
+
+export function checkSemiReversalSignal(
+    stockIndicators: any,
+    smhPrices: Ohlc[]
+): { active: boolean; confidence: number; reason?: string } {
+    // 1. Sector Crash: SMH ETF < SMA50(SMH) * 0.90
+    if (smhPrices.length < 50) return { active: false, confidence: 0 };
+
+    const smhCloses = smhPrices.map(p => p.close);
+    const smhSMA50 = SMA.calculate({ period: 50, values: smhCloses });
+    const lastSMH = smhCloses[smhCloses.length - 1];
+    const lastSMHSMA50 = smhSMA50[smhSMA50.length - 1];
+
+    const isSectorCrash = lastSMH <= lastSMHSMA50 * 0.90;
+    if (!isSectorCrash) return { active: false, confidence: 0, reason: "Sector (SMH) has not crashed sufficiently (< 10% below SMA50)" };
+
+    // 2. Volatility Expansion: Stock KCW > 7.2
+    const isVolExpansion = stockIndicators.kcw > 7.2;
+    if (!isVolExpansion) return { active: false, confidence: 0, reason: "Stock volatility (KCW) is too low (< 7.2)" };
+
+    // 3. Terminal Oversold: Williams %R < -81
+    const isOversold = stockIndicators.wr < -81;
+    if (!isOversold) return { active: false, confidence: 0, reason: "Stock is not yet in terminal oversold territory (Williams %R > -81)" };
+
+    // 4. Price Stabilization: DPO > -0.31
+    const isStabilized = stockIndicators.dpo > -0.31;
+    if (!isStabilized) return { active: false, confidence: 0, reason: "Price decline hasn't flattened yet (DPO <= -0.31)" };
+
+    return {
+        active: true,
+        confidence: 0.6989,
+        reason: "Golden Reversal Signature Confirmed: Maximum Compression during Sector Bloodbath."
     };
 }

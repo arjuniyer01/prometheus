@@ -32,7 +32,8 @@ export default function Home() {
     prices,
     financials,
     loading,
-    loadingPrices
+    loadingPrices,
+    smhPrices
   } = useStockDashboard();
 
   const [finView, setFinView] = useState<'annual' | 'quarterly'>('annual');
@@ -157,6 +158,7 @@ export default function Home() {
                 showVolume={showVolume}
                 setShowVolume={setShowVolume}
                 getRawChanges={getRawChanges}
+                smhPrices={smhPrices}
               />
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

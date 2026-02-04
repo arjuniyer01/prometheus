@@ -10,6 +10,7 @@ export function useStockDashboard() {
     const [insight, setInsight] = useState<any>(null);
     const [tickerData, setTickerData] = useState<any>(null);
     const [prices, setPrices] = useState<any[]>([]);
+    const [smhPrices, setSmhPrices] = useState<any[]>([]);
     const [financials, setFinancials] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingPrices, setLoadingPrices] = useState(false);
@@ -57,13 +58,22 @@ export function useStockDashboard() {
         if (insights && insights.length > 0) setInsight(insights[0]);
         else setInsight(null);
 
-        if (profile) setTickerData(profile);
+        if (profile) {
+            setTickerData(profile);
+            // If it's a semiconductor company, ensure we have SMH prices for technical analysis
+            const semiIndustries = ["Semiconductors", "Semiconductor Equipment & Materials", "Semiconductor Equipment"];
+            if (semiIndustries.includes(profile.industry)) {
+                fetchPrices("SMH", true);
+            }
+        }
         if (finData) setFinancials(finData);
     }, []);
 
-    const fetchPrices = useCallback(async (symbol: string) => {
-        setLoadingPrices(true);
-        setPrices([]);
+    const fetchPrices = useCallback(async (symbol: string, isSectorBenchmark: boolean = false) => {
+        if (!isSectorBenchmark) {
+            setLoadingPrices(true);
+            setPrices([]);
+        }
         try {
             const isIndianStock = symbol.endsWith('.NS') || symbol.endsWith('.BO') || tickers.find(t => t.symbol === symbol)?.market === 'INDIA';
             let effectiveSymbol = symbol;
@@ -75,20 +85,28 @@ export function useStockDashboard() {
             if (response.ok) {
                 const livePrices = await response.json();
                 if (livePrices && livePrices.length > 0) {
-                    setPrices(livePrices.map((p: any) => ({
+                    const formattedPrices = livePrices.map((p: any) => ({
                         date: p.date,
                         open: p.open,
                         high: p.high,
                         low: p.low,
                         close: p.close,
                         volume: p.volume
-                    })));
+                    }));
+
+                    if (isSectorBenchmark) {
+                        setSmhPrices(formattedPrices);
+                    } else {
+                        setPrices(formattedPrices);
+                    }
                 }
             }
         } catch (e) {
             console.error(e);
         } finally {
-            setLoadingPrices(false);
+            if (!isSectorBenchmark) {
+                setLoadingPrices(false);
+            }
         }
     }, [tickers]);
 
@@ -146,6 +164,7 @@ export function useStockDashboard() {
         prices,
         financials,
         loading,
-        loadingPrices
+        loadingPrices,
+        smhPrices
     };
 }
