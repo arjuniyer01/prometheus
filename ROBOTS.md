@@ -108,7 +108,7 @@ We use a highly customized implementation of Recharts to achieve financial-grade
     *   **Tooltips**: Use 3-decimal precision (`.toFixed(3)`) for all tooltip metrics.
     *   **Controls**: dedicated "Chart Analysis" button for expanding the view; do not use hover-overlay icons.
 4.  **Sensor Management Protocol**:
-    *   The **TECHNICAL SENSORS** dropdown is reserved strictly for **Main Chart Overlays** (SMA, EMA, VWAP, BB, PSAR, PROJ, VOL, PATTERNS, S/R).
+    *   The **TECHNICAL SENSORS** dropdown is reserved strictly for **Main Chart Overlays** (SMA, EMA, VWAP, BB, PSAR, VOL, PATTERNS, S/R).
     *   **Support & Resistance (S/R)**: Calculated using local price pivots (fractals) clustered by ATR-based proximity. Only high-strength levels (tested multiple times) are displayed to ensure reliability.
     *   **Sub-chart indicators** (RSI, MACD, AO, Force, KST, ROC, MFI, Stoch, WR, CCI, OBV, ADX, ATR, ADL, TRIX) which render in separate panes below the price chart are **Always On** and removed from the toggle list to ensure terminal data depth is permanently visible.
 
@@ -169,4 +169,4 @@ We do not rely on standard API news endpoints (often delayed or limited).
 *   **"ReferenceError: Cannot access 'X' before initialization"**: In large `useCallback` hooks (like `downloadReport` in `page.tsx`), standard JavaScript scoping applies. Helper functions defined with `const` must be declared *before* they are used. They are not hoisted like `function` declarations.
 
 ---
-*Last Updated: Feb 01, 2026 - System Version 2.3 (The "Global Identity & Fallback" Update)*
+*Last Updated: Feb 01, 2026 - System Version 2.4 (The "Pure Analysis" Update - Prediction Algorithms Removed)*

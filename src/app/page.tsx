@@ -41,9 +41,8 @@ export default function Home() {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isChartExpanded, setIsChartExpanded] = useState(false);
   const [chartTimeframe, setChartTimeframe] = useState('6M');
-  const [showSMA, setShowSMA] = useState(true);
+  const [showSMA, setShowSMA] = useState(false);
   const [showVolume, setShowVolume] = useState(true);
-  const [showProjections, setShowProjections] = useState(true);
   const [chartType, setChartType] = useState<'area' | 'candles'>('candles');
   const { toast } = useToast();
 
@@ -157,8 +156,6 @@ export default function Home() {
                 setShowSMA={setShowSMA}
                 showVolume={showVolume}
                 setShowVolume={setShowVolume}
-                showProjections={showProjections}
-                setShowProjections={setShowProjections}
                 getRawChanges={getRawChanges}
               />
 
