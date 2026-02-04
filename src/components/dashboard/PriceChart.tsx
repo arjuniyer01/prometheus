@@ -18,7 +18,7 @@ import {
     Label,
 } from "recharts";
 import { createPortal } from "react-dom";
-import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers, ScanEye, Download } from "lucide-react";
+import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers, ScanEye, Download, Calendar } from "lucide-react";
 import { GlassCard } from "@/components/ui/GlassCard";
 import { cn } from "@/lib/utils";
 import { SMA, RSI, MACD, BollingerBands, EMA, ADX, ATR, Stochastic, WilliamsR, MFI, OBV, TRIX, VWAP, CCI, ROC, KST, PSAR, ADL, ForceIndex, AwesomeOscillator } from "technicalindicators";
@@ -195,16 +195,10 @@ export function PriceChart({
         const volumes = prices.map(p => p.volume);
 
         // 1. SMA
-        const sma20 = prices.map((p, idx) => {
-            if (idx < 19) return null;
-            const slice = prices.slice(idx - 19, idx + 1);
-            return slice.reduce((acc, curr) => acc + curr.close, 0) / 20;
-        });
-        const sma50 = prices.map((p, idx) => {
-            if (idx < 49) return null;
-            const slice = prices.slice(idx - 49, idx + 1);
-            return slice.reduce((acc, curr) => acc + curr.close, 0) / 50;
-        });
+        const sma20Values = SMA.calculate({ values: closePrices, period: 20 });
+        const sma20 = [...new Array(prices.length - sma20Values.length).fill(null), ...sma20Values];
+        const sma50Values = SMA.calculate({ values: closePrices, period: 50 });
+        const sma50 = [...new Array(prices.length - sma50Values.length).fill(null), ...sma50Values];
 
         // 2. RSI
         const rsiValues = RSI.calculate({ values: closePrices, period: 14 });
@@ -296,6 +290,15 @@ export function PriceChart({
         const dpoValues = calculateDPO(closePrices, 20);
         const kcwValues = calculateKCW(highPrices, lowPrices, closePrices, 20, 2);
 
+        // Pre-calculate date strings for backtest speed
+        const dateStrings = prices.map(p => {
+            try {
+                return new Date(p.date).toISOString().split('T')[0];
+            } catch (e) {
+                return "";
+            }
+        });
+
         const data = prices.map((p, idx) => {
             const bodyMin = Math.min(p.open, p.close);
             const bodyMax = Math.max(p.open, p.close);
@@ -353,7 +356,8 @@ export function PriceChart({
                 ao: paddedAO[idx], bodyRange: [bodyMin, bodyMax],
                 pattern, patternY,
                 dpo: dpoValues[idx],
-                kcw: kcwValues[idx]
+                kcw: kcwValues[idx],
+                dateStr: dateStrings[idx]
             };
         });
 
@@ -380,9 +384,7 @@ export function PriceChart({
         const benchmarkMap = new Map();
         smhPrices.forEach((p, i) => {
             try {
-                const d = new Date(p.date);
-                if (isNaN(d.getTime())) return;
-                const dateStr = d.toISOString().split('T')[0];
+                const dateStr = typeof p.date === 'string' ? p.date.split('T')[0] : new Date(p.date).toISOString().split('T')[0];
                 benchmarkMap.set(dateStr, { close: p.close, sma50: smhSMA50Padded[i] });
             } catch (e) {
                 // Ignore invalid dates
@@ -394,47 +396,35 @@ export function PriceChart({
         let totalReturns = 0;
 
         const signals = dataWithIndicators.map((point, i) => {
-            try {
-                const d = new Date(point.date);
-                if (isNaN(d.getTime())) return { ...point, strategySignal: false };
-                const dateStr = d.toISOString().split('T')[0];
-                const bench = benchmarkMap.get(dateStr);
+            const dateStr = point.dateStr;
+            if (!dateStr) return { ...point, strategySignal: false };
+            const bench = benchmarkMap.get(dateStr);
 
-                if (!bench || !bench.sma50) return { ...point, strategySignal: false };
+            if (!bench || !bench.sma50) return { ...point, strategySignal: false };
 
-                const isSectorCrash = bench.close <= bench.sma50 * 0.90;
-                const isVolExpansion = (point.kcw || 0) > 7.2;
-                const isOversold = (point.wr || 0) < -81;
-                const isStabilized = (point.dpo || 0) > -0.31;
+            const isSectorCrash = bench.close <= bench.sma50 * 0.90;
+            const isVolExpansion = (point.kcw || 0) > 7.2;
+            const isOversold = (point.wr || 0) < -81;
+            const isStabilized = (point.dpo || 0) > -0.31;
 
-                const isSignal = isSectorCrash && isVolExpansion && isOversold && isStabilized;
+            const isSignal = isSectorCrash && isVolExpansion && isOversold && isStabilized;
 
-                if (isSignal) {
-                    totalSignals++;
-                    console.log(`Signal detected on ${dateStr}:`);
-                    console.log(`  Sector Crash: ${isSectorCrash} (Bench Close: ${bench.close}, Bench SMA50: ${bench.sma50})`);
-                    console.log(`  Vol Expansion: ${isVolExpansion} (KCW: ${point.kcw})`);
-                    console.log(`  Oversold: ${isOversold} (WR: ${point.wr})`);
-                    console.log(`  Stabilized: ${isStabilized} (DPO: ${point.dpo})`);
-
-                    // Backtest check (Look ahead 3 days)
-                    if (i < dataWithIndicators.length - 3) {
-                        const entryPrice = point.close;
-                        const maxPriceNext3Days = Math.max(
-                            dataWithIndicators[i + 1].high || dataWithIndicators[i + 1].close,
-                            dataWithIndicators[i + 2].high || dataWithIndicators[i + 2].close,
-                            dataWithIndicators[i + 3].high || dataWithIndicators[i + 3].close
-                        );
-                        const returnPct = ((maxPriceNext3Days - entryPrice) / entryPrice) * 100;
-                        totalReturns += returnPct;
-                        if (returnPct >= 6.0) successfulSignals++;
-                    }
+            if (isSignal) {
+                totalSignals++;
+                if (i < dataWithIndicators.length - 3) {
+                    const entryPrice = point.close;
+                    const maxPriceNext3Days = Math.max(
+                        dataWithIndicators[i + 1].high || dataWithIndicators[i + 1].close,
+                        dataWithIndicators[i + 2].high || dataWithIndicators[i + 2].close,
+                        dataWithIndicators[i + 3].high || dataWithIndicators[i + 3].close
+                    );
+                    const returnPct = ((maxPriceNext3Days - entryPrice) / entryPrice) * 100;
+                    totalReturns += returnPct;
+                    if (returnPct >= 6.0) successfulSignals++;
                 }
-
-                return { ...point, strategySignal: isSignal };
-            } catch (e) {
-                return { ...point, strategySignal: false };
             }
+
+            return { ...point, strategySignal: isSignal };
         });
 
         const lastPoint = dataWithIndicators[dataWithIndicators.length - 1];
@@ -467,21 +457,23 @@ export function PriceChart({
             active: strategyBacktest.active,
             confidence: 0.6989, // From model
             stats: strategyBacktest.stats,
-            pillars: strategyBacktest.currentPillars
+            pillars: strategyBacktest.currentPillars,
+            dates: strategyBacktest.signals
+                .filter(s => s.strategySignal)
+                .map(s => s.dateStr || new Date(s.date).toISOString().split('T')[0])
         };
     }, [strategyBacktest]);
 
     const filteredPrices = useMemo(() => {
         if (!dataWithIndicators.length) return [];
-        if (!isChartExpanded) return dataWithIndicators; // Mini Chart = Max Data
+        if (!isChartExpanded) return dataWithIndicators.slice(-1260); // Mini Chart = 5Y Data (approx 252 * 5)
 
         switch (chartTimeframe) {
             case '1M': return dataWithIndicators.slice(-22);
             case '6M': return dataWithIndicators.slice(-126);
             case '1Y': return dataWithIndicators.slice(-252);
-            // Cap Terminal at 1Y to prevent UI crash
-            case '5Y':
-            case 'MAX':
+            case '5Y': return dataWithIndicators.slice(-1260);
+            case 'MAX': return dataWithIndicators;
             default: return dataWithIndicators.slice(-252);
         }
     }, [dataWithIndicators, chartTimeframe, isChartExpanded]);
@@ -644,7 +636,7 @@ export function PriceChart({
                 </div>
 
                 {/* Semi-Reversal Signal Banner */}
-                {tickerData?.industry && ["Semiconductors", "Semiconductor Equipment & Materials", "Semiconductor Equipment"].includes(tickerData.industry) && (
+                {tickerData?.industry?.toLowerCase().includes("semiconductor") && (
                     <div className={cn(
                         "mx-6 mb-6 rounded-2xl border transition-all overflow-hidden",
                         semiReversalSignal?.active
@@ -730,6 +722,23 @@ export function PriceChart({
                                                 </div>
                                             ))}
                                         </div>
+
+                                        {/* Recent Signals List */}
+                                        {semiReversalSignal?.dates && semiReversalSignal.dates.length > 0 && (
+                                            <div className="mt-4 pt-4 border-t border-white/5">
+                                                <h5 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] mb-2 flex items-center gap-2">
+                                                    <Calendar className="w-3 h-3" /> Signal History (Last 5)
+                                                </h5>
+                                                <div className="flex flex-wrap gap-2">
+                                                    {semiReversalSignal.dates.slice(-5).reverse().map((date: string, idx: number) => (
+                                                        <span key={idx} className="px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-mono font-bold">
+                                                            {date}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
                                         {/* Diagnostic Intel */}
                                         <div className="mt-4 pt-4 border-t border-white/5 flex items-center justify-between">
                                             <div className="flex items-center gap-2">
@@ -795,7 +804,7 @@ export function PriceChart({
                             </div>
                             <div className="h-8 w-px bg-white/5" />
                             <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/5">
-                                {['1M', '6M', '1Y'].map((t) => (
+                                {['1M', '6M', '1Y', '5Y', 'MAX'].map((t) => (
                                     <button
                                         key={t}
                                         onClick={() => setChartTimeframe(t)}
@@ -1136,6 +1145,25 @@ export function PriceChart({
                                                 isAnimationActive={false}
                                             />
                                         )}
+
+                                        {/* Strategy Signal Vertical Lines */}
+                                        {combinedData.filter((s: any) => s.strategySignal).map((signal: any, idx: number) => {
+                                            // Ensure we match the categorical XAxis which is typically date string or index
+                                            // The XAxis dataKey="date" typically refers to the formatted date string or timestamp depending on setup
+                                            // Since XAxis uses "date" and tickFormatter parses it, let's use the exact value from the data payload
+                                            return (
+                                                <ReferenceLine
+                                                    key={`signal-line-${idx}`}
+                                                    yAxisId="price"
+                                                    x={signal.date}
+                                                    stroke="#10b981"
+                                                    strokeWidth={2}
+                                                    strokeDasharray="3 3"
+                                                    opacity={1}
+                                                    label={{ position: 'insideTop', value: 'SIGNAL', fill: '#10b981', fontSize: 10, fontWeight: 'bold' }}
+                                                />
+                                            );
+                                        })}
 
                                         {/* Strategy Signal Dots */}
                                         <Scatter
