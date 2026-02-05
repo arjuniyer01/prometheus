@@ -149,16 +149,31 @@ export const PrometheusScore = ({ metadata }: PrometheusScoreProps) => {
                 <div className="text-2xl font-bold font-outfit text-white">{computedScore}<span className="text-sm text-slate-500">/100</span></div>
             </div>
 
-            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden w-full mb-4">
+            <div className="h-1.5 bg-white/5 rounded-full overflow-hidden w-full mb-1.5">
                 <div
                     className={cn(
                         "h-full transition-all duration-300",
-                        computedScore >= 70 ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" :
+                        computedScore >= 60 ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" :
                             computedScore >= 40 ? "bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]" :
-                                "bg-red-500 shadow-[0_0_10px_rgba(239,68,68,0.5)]"
+                                "bg-rose-500 shadow-[0_0_10px_rgba(244,63,94,0.5)]"
                     )}
                     style={{ width: `${computedScore}%` }}
                 />
+            </div>
+
+            <div className="flex justify-between items-center px-1 mb-4">
+                <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-rose-500/40" />
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">10-40 SELL</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber-500/40" />
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">40-60 HOLD</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                    <div className="w-1.5 h-1.5 rounded-full bg-emerald-500/40" />
+                    <span className="text-[8px] font-black text-slate-500 uppercase tracking-tighter">60-100 BUY</span>
+                </div>
             </div>
 
             <button

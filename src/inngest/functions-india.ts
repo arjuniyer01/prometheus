@@ -66,9 +66,10 @@ function pivotFinancials(data: any): any[] {
             const key = mapping[label] || label;
             const val = metrics[period];
             if (val !== undefined) {
-                // Convert Crores to absolute INR
+                // Convert Crores to absolute INR if it's a financial scale metric
                 const numericVal = typeof val === 'number' ? val : parseFloat(val);
-                record[key] = isNaN(numericVal) ? 0 : numericVal * 1e7;
+                const needsMultiplier = !['eps', 'pe', 'ratio', 'yield', 'beta', 'margin', 'percentage'].some(k => key.toLowerCase().includes(k));
+                record[key] = isNaN(numericVal) ? 0 : (needsMultiplier ? numericVal * 1e7 : numericVal);
             }
         });
         return record;
@@ -143,8 +144,9 @@ function transformRowFinancials(stockFinancialObj: any): any {
                 const standardKey = mapping[cleanKey] || cleanKey;
                 const numericVal = parseFloat(item.value);
                 if (!isNaN(numericVal)) {
-                    // Convert Crores to absolute INR
-                    record[standardKey] = numericVal * 1e7;
+                    // Convert Crores to absolute INR if it's a financial scale metric
+                    const needsMultiplier = !['eps', 'pe', 'ratio', 'yield', 'beta', 'margin', 'percentage'].some(k => standardKey.toLowerCase().includes(k));
+                    record[standardKey] = needsMultiplier ? numericVal * 1e7 : numericVal;
                 }
             });
         }
@@ -283,8 +285,10 @@ export const analyzeTickerIndia = inngest.createFunction(
         CURRENT DATE: ${today}
 
         CRITICAL INSTRUCTIONS (INDIAN CONTEXT):
-        1. TERMINOLOGY: Use Indian financial terminology (Crores, Lakhs). 1 Crore = 10,000,000; 1 Lakh = 100,000.
-        2. STANDALONE vs CONSOLIDATED: Differentiate if provided. Usually Consolidated is preferred for group health.
+        1. TERMINOLOGY: Use Indian financial terminology (Crores, Lakhs). 1 Crore = 10,000,000; 1 Lakh = 100,000; 100 Crores = 1 Billion.
+        2. UNIT CONVERSION: If you see large absolute numbers (e.g., 29,000,000,000), divide by 10,000,000 to get Crores. DO NOT confuse Million with Crore. 10 Million = 1 Crore.
+        3. DATA VERIFICATION: If Market Cap is 29,000,000,000, it is 2,900 Crores, NOT 29,000 Crores. Check your math!
+        4. STANDALONE vs CONSOLIDATED: Differentiate if provided. Usually Consolidated is preferred for group health.
         3. REGULATORY SEARCH: Use the provided "Corporate Actions" and "NSE Announcements" to act as the regulatory pulse. Analyze for significant insider moves, board meetings, or regulatory warnings.
         4. FINANCIAL TRENDS: Analyze the P&L and Balance Sheet trends specifically for the Indian market context (high growth, inflationary environment, sector-specific tailwinds like Digital India).
         5. SECTOR INTELLIGENCE (INDIA): 
@@ -300,7 +304,7 @@ export const analyzeTickerIndia = inngest.createFunction(
         7. OPINIONATED ANALYSIS: Do not be overly cautious. Act like an institutional equity research analyst. If a metric is strong compared to Nifty peers or historical trends (like superior PE conversion or ROE), mark it "positive". If it's a structural risk (high debt-to-equity, margin pressure), mark it "negative". Avoid "neutral" unless it's truly unremarkable.
         8. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the indexHistory, provide a representative score (0-100).
         
-        DATA:
+        DATA (NOTE: Values like marketCap, revenue, etc. are in absolute INR units unless specified):
         Profile: ${JSON.stringify(data.profile)}
         Financials: ${JSON.stringify(data.financials)}
         Ratios: ${JSON.stringify(data.ratios)}
