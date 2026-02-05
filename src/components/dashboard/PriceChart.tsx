@@ -13,6 +13,8 @@ import {
     Tooltip as RechartsTooltip,
     ResponsiveContainer,
     Brush,
+    ReferenceLine,
+    Label,
 } from "recharts";
 import { createPortal } from "react-dom";
 import { Maximize2, Loader2, X, BarChart3, Binary, Activity, Waves, ChevronDown, Check, Layers } from "lucide-react";
@@ -165,6 +167,7 @@ export function PriceChart({
     const [showEMA, setShowEMA] = useState(false);
     const [showVWAP, setShowVWAP] = useState(false);
     const [showPSAR, setShowPSAR] = useState(true);
+    const [showSR, setShowSR] = useState(false);
     const [isSensorsOpen, setIsSensorsOpen] = useState(false);
 
     const dataWithIndicators = useMemo(() => {
@@ -301,6 +304,53 @@ export function PriceChart({
             default: return dataWithIndicators;
         }
     }, [dataWithIndicators, chartTimeframe]);
+
+    const srLevels = useMemo(() => {
+        if (!showSR || !filteredPrices.length) return [];
+
+        const data = filteredPrices;
+        const window = 5;
+        const pivots: { price: number; type: 'support' | 'resistance' }[] = [];
+
+        for (let i = window; i < data.length - window; i++) {
+            const high = data[i].high;
+            const low = data[i].low;
+
+            let isHigh = true;
+            let isLow = true;
+            for (let j = i - window; j <= i + window; j++) {
+                if (i === j) continue;
+                if (data[j].high > high) isHigh = false;
+                if (data[j].low < low) isLow = false;
+            }
+
+            if (isHigh) pivots.push({ price: high, type: 'resistance' });
+            if (isLow) pivots.push({ price: low, type: 'support' });
+        }
+
+        const clusters: { price: number; type: 'support' | 'resistance'; count: number }[] = [];
+        const prices = data.map(d => d.close);
+        const range = Math.max(...data.map(d => d.high)) - Math.min(...data.map(d => d.low));
+        const threshold = range * 0.015;
+
+        pivots.forEach(pivot => {
+            let found = false;
+            for (const cluster of clusters) {
+                if (Math.abs(cluster.price - pivot.price) < threshold) {
+                    cluster.price = (cluster.price * cluster.count + pivot.price) / (cluster.count + 1);
+                    cluster.count++;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) clusters.push({ ...pivot, count: 1 });
+        });
+
+        return clusters
+            .filter(c => c.count >= 2)
+            .sort((a, b) => b.count - a.count)
+            .slice(0, 8);
+    }, [filteredPrices, showSR]);
 
 
 
@@ -481,6 +531,7 @@ export function PriceChart({
                                                 { label: 'VWAP', active: showVWAP, onClick: () => setShowVWAP(!showVWAP) },
                                                 { label: 'BB', active: showBB, onClick: () => setShowBB(!showBB) },
                                                 { label: 'PSAR', active: showPSAR, onClick: () => setShowPSAR(!showPSAR) },
+                                                { label: 'S/R', active: showSR, onClick: () => setShowSR(!showSR) },
                                                 { label: 'VOL', active: showVolume, onClick: () => setShowVolume(!showVolume) },
                                             ].map((btn) => (
                                                 <button
@@ -692,9 +743,19 @@ export function PriceChart({
                                                                     </div>
                                                                 </div>
                                                             )}
+
+                                                            {showSR && srLevels.length > 0 && (
+                                                                <div className="flex flex-col gap-1 border-t border-white/5 pt-2 mt-2">
+                                                                    <div className="text-[8px] font-black text-slate-600 uppercase tracking-widest mb-1">Detected Levels</div>
+                                                                    {srLevels.map((lvl, i) => (
+                                                                        <div key={i} className={cn("flex items-center justify-between border-l-2 pl-2", lvl.type === 'resistance' ? "border-rose-500/50" : "border-emerald-500/50")}>
+                                                                            <span className={cn("text-[9px] font-black uppercase", lvl.type === 'resistance' ? "text-rose-400" : "text-emerald-400")}>{lvl.type}</span>
+                                                                            <span className="text-[9px] text-slate-300 font-mono">{currencySymbol}{lvl.price.toFixed(2)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
                                                         </div>
-
-
                                                     </div>,
                                                     document.body
                                                 );
@@ -767,6 +828,27 @@ export function PriceChart({
                                         {showVolume && (
                                             <Bar yAxisId="volume" dataKey="volume" fill="#eab308" fillOpacity={0.4} radius={[1, 1, 0, 0]} animationDuration={500} />
                                         )}
+
+                                        {showSR && srLevels.map((lvl, i) => (
+                                            <ReferenceLine
+                                                key={i}
+                                                yAxisId="price"
+                                                y={lvl.price}
+                                                stroke={lvl.type === 'resistance' ? '#f43f5e' : '#10b981'}
+                                                strokeDasharray="3 3"
+                                                strokeWidth={1}
+                                                strokeOpacity={0.6}
+                                            >
+                                                <Label
+                                                    value={`${lvl.type === 'resistance' ? 'RES' : 'SUP'} ${currencySymbol}${lvl.price.toFixed(0)}`}
+                                                    position="right"
+                                                    fill={lvl.type === 'resistance' ? '#f43f5e' : '#10b981'}
+                                                    fontSize={8}
+                                                    fontWeight="bold"
+                                                    offset={10}
+                                                />
+                                            </ReferenceLine>
+                                        ))}
                                     </ComposedChart>
                                 </ResponsiveContainer>
                             </div>
@@ -883,7 +965,8 @@ export function PriceChart({
                         </div>
                     </div>
                 </div>
-            )}
+            )
+            }
         </>
     );
 }
