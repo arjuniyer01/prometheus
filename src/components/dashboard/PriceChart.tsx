@@ -328,15 +328,19 @@ export function PriceChart({
             if (isLow) pivots.push({ price: low, type: 'support' });
         }
 
+        // Identify global extremes for the timeframe
+        const periodHigh = Math.max(...data.map(d => d.high));
+        const periodLow = Math.min(...data.map(d => d.low));
+
         const clusters: { price: number; type: 'support' | 'resistance'; count: number }[] = [];
-        const prices = data.map(d => d.close);
-        const range = Math.max(...data.map(d => d.high)) - Math.min(...data.map(d => d.low));
-        const threshold = range * 0.015;
+        const range = periodHigh - periodLow;
+        const threshold = range * 0.02;
 
         pivots.forEach(pivot => {
             let found = false;
             for (const cluster of clusters) {
-                if (Math.abs(cluster.price - pivot.price) < threshold) {
+                // Cluster by type and proximity (2% of range)
+                if (cluster.type === pivot.type && Math.abs(cluster.price - pivot.price) < threshold) {
                     cluster.price = (cluster.price * cluster.count + pivot.price) / (cluster.count + 1);
                     cluster.count++;
                     found = true;
@@ -346,10 +350,18 @@ export function PriceChart({
             if (!found) clusters.push({ ...pivot, count: 1 });
         });
 
+        // Ensure period high/low are represented as major levels
+        if (!clusters.some(c => Math.abs(c.price - periodHigh) < threshold)) {
+            clusters.push({ price: periodHigh, type: 'resistance', count: 1 });
+        }
+        if (!clusters.some(c => Math.abs(c.price - periodLow) < threshold)) {
+            clusters.push({ price: periodLow, type: 'support', count: 1 });
+        }
+
         return clusters
-            .filter(c => c.count >= 2)
+            .filter(c => c.count >= 1)
             .sort((a, b) => b.count - a.count)
-            .slice(0, 8);
+            .slice(0, 10);
     }, [filteredPrices, showSR]);
 
 
