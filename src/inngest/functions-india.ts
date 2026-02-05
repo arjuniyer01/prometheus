@@ -322,6 +322,8 @@ export const analyzeTickerIndia = inngest.createFunction(
         - institutional_analysis: A 3-sentence synthesis of analyst consensus, insider behavior, and earnings surprise consistency.
         - sentiment_summary: A 2-sentence synthesis of headlines.
         - sentiment_score: 0-100
+        - intrinsic_value: A number representing the AI's calculated fair value per share in INR based on DCF/Multiples.
+        - valuation_analysis: A 2-sentence explanation of the valuation logic relative to the Indian market.
         - score_breakdown: { financial_score, sentiment_score, trend_score, sector_score, institutional_score }
         - financial_subscores: { profitability, growth, solvency }
         - trend_subscores: { 
@@ -471,6 +473,8 @@ export const analyzeTickerIndia = inngest.createFunction(
                     prometheus_score: aiAnalysis.prometheus_score || 0,
                     score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0, institutional_score: 0 },
                     score_criteria: aiAnalysis.score_criteria || "Multidimensional synthesis of fundamental and market signals.",
+                    intrinsic_value: aiAnalysis.intrinsic_value || 0,
+                    valuation_analysis: aiAnalysis.valuation_analysis || "Valuation pending deep fundamental scan.",
                     financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
                     trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 },
                     sector_subscores: aiAnalysis.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 },

@@ -1,10 +1,7 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, Suspense, lazy } from "react";
 import { GlassCard } from "@/components/ui/GlassCard";
-import { MetricCopilot } from "@/components/dashboard/MetricCopilot";
-import { InstitutionalIntelligence } from "@/components/dashboard/InstitutionalIntelligence";
-import { ExecutiveBench } from "@/components/dashboard/ExecutiveBench";
 import {
   Zap,
   BarChart3,
@@ -15,12 +12,18 @@ import {
 import { useToast } from "@/components/ui/use-toast";
 import { useStockDashboard } from "@/hooks/useStockDashboard";
 import { TickerSearch } from "@/components/dashboard/TickerSearch";
-import { PriceChart } from "@/components/dashboard/PriceChart";
-import { PrometheusReportPanel } from "@/components/dashboard/PrometheusReportPanel";
-import { RegulatorySentimentPanel } from "@/components/dashboard/RegulatorySentimentPanel";
-import { FinancialsTable } from "@/components/dashboard/FinancialsTable";
-import { DeepFundamentalAnalysis } from "@/components/dashboard/DeepFundamentalAnalysis";
 import { getReportMarkdown } from "@/lib/report-utils";
+
+// Lazy load heavy components
+const PrometheusReportPanel = lazy(() => import("@/components/dashboard/PrometheusReportPanel").then(m => ({ default: m.PrometheusReportPanel })));
+const PriceChart = lazy(() => import("@/components/dashboard/PriceChart").then(m => ({ default: m.PriceChart })));
+const RegulatorySentimentPanel = lazy(() => import("@/components/dashboard/RegulatorySentimentPanel").then(m => ({ default: m.RegulatorySentimentPanel })));
+const MetricCopilot = lazy(() => import("@/components/dashboard/MetricCopilot").then(m => ({ default: m.MetricCopilot })));
+const InstitutionalIntelligence = lazy(() => import("@/components/dashboard/InstitutionalIntelligence").then(m => ({ default: m.InstitutionalIntelligence })));
+const DeepFundamentalAnalysis = lazy(() => import("@/components/dashboard/DeepFundamentalAnalysis").then(m => ({ default: m.DeepFundamentalAnalysis })));
+const FinancialsTable = lazy(() => import("@/components/dashboard/FinancialsTable").then(m => ({ default: m.FinancialsTable })));
+const ExecutiveBench = lazy(() => import("@/components/dashboard/ExecutiveBench").then(m => ({ default: m.ExecutiveBench })));
+const DCFAnalysis = lazy(() => import("@/components/dashboard/DCFAnalysis").then(m => ({ default: m.DCFAnalysis })));
 
 export default function Home() {
   const {
@@ -45,6 +48,7 @@ export default function Home() {
   const [showVolume, setShowVolume] = useState(true);
   const [showProjections, setShowProjections] = useState(true);
   const [chartType, setChartType] = useState<'area' | 'candles'>('candles');
+  const [showRawDump, setShowRawDump] = useState(false);
   const { toast } = useToast();
 
   const isIndian = insight?.metadata?.currency === 'INR' || selectedSymbol?.endsWith('.NS') || selectedSymbol?.endsWith('.BO') || tickerData?.market === 'INDIA';
@@ -128,53 +132,58 @@ export default function Home() {
       {selectedSymbol ? (
         <div className="space-y-6">
           <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr_300px] gap-6 items-start">
-            <PrometheusReportPanel
-              insight={insight}
-              selectedSymbol={selectedSymbol}
-              downloadReport={handleDownloadReport}
-              isAiOpen={isAiOpen}
-              setIsAiOpen={setIsAiOpen}
-              aiQuery={aiQuery}
-              setAiQuery={setAiQuery}
-              onAskAi={handleAskAiQuestion}
-            />
+            <Suspense fallback={<div className="h-[400px] glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
+              <PrometheusReportPanel
+                insight={insight}
+                selectedSymbol={selectedSymbol}
+                downloadReport={handleDownloadReport}
+                isAiOpen={isAiOpen}
+                setIsAiOpen={setIsAiOpen}
+                aiQuery={aiQuery}
+                setAiQuery={setAiQuery}
+                onAskAi={handleAskAiQuestion}
+              />
+            </Suspense>
 
             <div className="flex flex-col gap-6">
-              <PriceChart
-                prices={prices}
-                loadingPrices={loadingPrices}
-                chartColor={chartColor}
-                currencySymbol={currencySymbol}
-                tickerData={tickerData}
-                selectedSymbol={selectedSymbol}
-                isChartExpanded={isChartExpanded}
-                setIsChartExpanded={setIsChartExpanded}
-                chartTimeframe={chartTimeframe}
-                setChartTimeframe={setChartTimeframe}
-                chartType={chartType}
-                setChartType={setChartType}
-                showSMA={showSMA}
-                setShowSMA={setShowSMA}
-                showVolume={showVolume}
-                setShowVolume={setShowVolume}
-                showProjections={showProjections}
-                setShowProjections={setShowProjections}
-                getRawChanges={getRawChanges}
-              />
+              <Suspense fallback={<div className="h-[400px] glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
+                <PriceChart
+                  prices={prices}
+                  loadingPrices={loadingPrices}
+                  chartColor={chartColor}
+                  currencySymbol={currencySymbol}
+                  tickerData={tickerData}
+                  selectedSymbol={selectedSymbol}
+                  isChartExpanded={isChartExpanded}
+                  setIsChartExpanded={setIsChartExpanded}
+                  chartTimeframe={chartTimeframe}
+                  setChartTimeframe={setChartTimeframe}
+                  chartType={chartType}
+                  setChartType={setChartType}
+                  showSMA={showSMA}
+                  setShowSMA={setShowSMA}
+                  showVolume={showVolume}
+                  setShowVolume={setShowVolume}
+                  showProjections={showProjections}
+                  setShowProjections={setShowProjections}
+                  getRawChanges={getRawChanges}
+                />
+              </Suspense>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {insight?.metrics ? (
                   insight.metrics.map((m: any, i: number) => (
-                    <MetricCopilot
-                      key={i}
-                      label={m.label}
-                      value={(m.value && typeof m.value === 'object')
-                        ? (m.value.NSE || m.value.BSE || JSON.stringify(m.value))
-                        : (m.value ?? '---')}
-                      status={m.status}
-                      shortExplanation={m.shortExplanation}
-                      technicalDefinition={m.technicalDefinition}
-                    />
+                    <Suspense key={i} fallback={<div className="h-28 glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
+                      <MetricCopilot
+                        label={m.label}
+                        value={(m.value && typeof m.value === 'object')
+                          ? (m.value.NSE || m.value.BSE || JSON.stringify(m.value))
+                          : (m.value ?? '---')}
+                        status={m.status}
+                        shortExplanation={m.shortExplanation}
+                        technicalDefinition={m.technicalDefinition}
+                      />
+                    </Suspense>
                   ))
                 ) : (
                   [1, 2, 3, 4, 5, 6].map((i) => (
@@ -184,80 +193,101 @@ export default function Home() {
               </div>
             </div>
 
-            <RegulatorySentimentPanel
-              insight={insight}
-              tickerData={tickerData}
-              selectedSymbol={selectedSymbol}
-              isIndian={isIndian}
-            />
+            <Suspense fallback={<div className="h-[400px] glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
+              <RegulatorySentimentPanel
+                insight={insight}
+                tickerData={tickerData}
+                selectedSymbol={selectedSymbol}
+                isIndian={isIndian}
+              />
+            </Suspense>
           </div>
 
           {insight?.metadata?.raw_research_dump && (
             <div className="mt-6">
-              <InstitutionalIntelligence
-                rawDump={insight.metadata.raw_research_dump}
-                analysis={insight.metadata.institutional_analysis}
-                subscores={insight.metadata.institutional_subscores}
-                isIndian={isIndian}
-              />
+              <Suspense fallback={<div className="h-[300px] glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
+                <InstitutionalIntelligence
+                  rawDump={insight.metadata.raw_research_dump}
+                  analysis={insight.metadata.institutional_analysis}
+                  subscores={insight.metadata.institutional_subscores}
+                  isIndian={isIndian}
+                />
+              </Suspense>
             </div>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
-            <DeepFundamentalAnalysis insight={insight} selectedSymbol={selectedSymbol} />
+          <Suspense fallback={<div className="h-[600px] glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+              <div className="space-y-6">
+                <DeepFundamentalAnalysis insight={insight} selectedSymbol={selectedSymbol} />
+                <DCFAnalysis insight={insight} tickerData={tickerData} />
+              </div>
 
-            <div className="space-y-6">
-              <FinancialsTable
-                financials={financials}
-                finView={finView}
-                setFinView={setFinView}
-                isIndian={isIndian}
-                currencySymbol={currencySymbol}
-              />
+              <div className="space-y-6">
+                <FinancialsTable
+                  financials={financials}
+                  finView={finView}
+                  setFinView={setFinView}
+                  isIndian={isIndian}
+                  currencySymbol={currencySymbol}
+                />
 
-              {insight?.metadata?.raw_research_dump?.extended_profile?.officers && (
-                <div className="mt-8">
-                  <ExecutiveBench
-                    officers={insight.metadata.raw_research_dump.extended_profile.officers}
-                    isIndian={isIndian}
-                  />
-                </div>
-              )}
-            </div>
-
-            <div className="mt-12 pt-12 border-t border-white/5 opacity-40 hover:opacity-100 transition-opacity col-span-full">
-              <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-3">
-                <Zap className="w-3 h-3" /> Raw Research Engine Dump
-              </h2>
-              <GlassCard className="p-0 border-white/5 bg-black/20 overflow-hidden">
-                <div className="p-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-[9px] font-mono text-slate-500">SYSTEM_RESEARCH_LOG_v2.5</span>
-                    <span className="text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest animate-pulse">Live Link Active</span>
+                {insight?.metadata?.raw_research_dump?.extended_profile?.officers && (
+                  <div className="mt-8">
+                    <ExecutiveBench
+                      officers={insight.metadata.raw_research_dump.extended_profile.officers}
+                      isIndian={isIndian}
+                    />
                   </div>
-                  <button
-                    onClick={handleCopyRawDump}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/5 group/copy"
-                  >
-                    {copied ? (
-                      <Check className="w-3 h-3 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3 h-3 group-hover/copy:scale-110 transition-transform" />
-                    )}
-                    <span className="text-[9px] font-bold uppercase tracking-widest">
-                      {copied ? "Copied" : "Copy Dump"}
-                    </span>
-                  </button>
+                )}
+              </div>
+            </div>
+          </Suspense>
+
+          <div className="mt-12 pt-12 border-t border-white/5 opacity-40 hover:opacity-100 transition-opacity col-span-full">
+            <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500 mb-6 flex items-center gap-3">
+              <Zap className="w-3 h-3" /> Raw Research Engine Dump
+            </h2>
+            <GlassCard className="p-0 border-white/5 bg-black/20 overflow-hidden">
+              <div className="p-4 bg-white/[0.02] border-b border-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="text-[9px] font-mono text-slate-500">SYSTEM_RESEARCH_LOG_v2.5</span>
+                  <span className="text-[9px] font-mono text-emerald-500/50 uppercase tracking-widest animate-pulse">Live Link Active</span>
                 </div>
-                <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar">
+                <button
+                  onClick={handleCopyRawDump}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white transition-all border border-white/5 group/copy"
+                >
+                  {copied ? (
+                    <Check className="w-3 h-3 text-emerald-400" />
+                  ) : (
+                    <Copy className="w-3 h-3 group-hover/copy:scale-110 transition-transform" />
+                  )}
+                  <span className="text-[9px] font-bold uppercase tracking-widest">
+                    {copied ? "Copied" : "Copy Dump"}
+                  </span>
+                </button>
+              </div>
+              <div className="p-6 max-h-[500px] overflow-y-auto custom-scrollbar">
+                {showRawDump ? (
                   <pre className="text-[10px] font-mono leading-relaxed text-slate-500 whitespace-pre-wrap">
                     {insight?.metadata?.raw_research_dump
                       ? JSON.stringify(insight.metadata.raw_research_dump, null, 2)
                       : "// No raw research buffer detected for this asset.\n// Ensure deep scan is completed."}
                   </pre>
-                </div>
-              </GlassCard>
-            </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-20 gap-4">
+                    <p className="text-[10px] font-mono text-slate-600 uppercase tracking-widest">Research buffer is compressed</p>
+                    <button
+                      onClick={() => setShowRawDump(true)}
+                      className="px-6 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-full text-[10px] font-black text-slate-400 hover:text-white transition-all uppercase tracking-[0.2em]"
+                    >
+                      Expand Research Buffer
+                    </button>
+                  </div>
+                )}
+              </div>
+            </GlassCard>
           </div>
         </div>
       ) : (

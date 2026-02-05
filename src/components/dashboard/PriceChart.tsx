@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, memo } from "react";
 import {
     AreaChart,
     Area,
@@ -100,6 +100,50 @@ interface PriceChartProps {
     getRawChanges: () => number;
 }
 
+const IndicatorTooltip = memo(({ active, payload, suffix = "" }: any) => {
+    if (!active || !payload || !payload.length) return null;
+    const data = payload[0].payload;
+    const dateStr = new Date(data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+    return (
+        <div className="bg-slate-950/90 backdrop-blur-md border border-white/10 rounded-lg p-2 shadow-xl border-l-2 border-l-indigo-500">
+            <div className="text-[8px] text-slate-500 font-black uppercase mb-1">{dateStr}</div>
+            {payload.map((entry: any, index: number) => (
+                <div key={index} className="flex items-center justify-between gap-4 mt-0.5">
+                    <span className="text-[9px] font-bold uppercase" style={{ color: entry.stroke || entry.fill || '#fff' }}>
+                        {entry.name || (typeof entry.dataKey === 'string' ? entry.dataKey.replace(/.*\./, '') : 'Value')}
+                    </span>
+                    <span className="text-[9px] font-mono text-white">{typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}{suffix}</span>
+                </div>
+            ))}
+        </div>
+    );
+});
+IndicatorTooltip.displayName = "IndicatorTooltip";
+
+const IndicatorChart = memo(({ title, color, dataKey, data, type = 'line', domain, ticks, name, secondaryKey, secondaryColor, tertiaryKey, tertiaryColor, barKey, barColor }: any) => {
+    return (
+        <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
+            <div className="absolute top-2 left-6 z-10 text-[8px] font-black uppercase tracking-widest transition-colors" style={{ color: `${color}88` }}>{title}</div>
+            <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={data} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
+                    <XAxis dataKey="date" hide />
+                    <YAxis orientation="right" domain={domain} axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} ticks={ticks} />
+                    <RechartsTooltip content={<IndicatorTooltip />} />
+                    {barKey && <Bar dataKey={barKey} name={barKey.split('.').pop().toUpperCase()} fill={barColor || '#475569'} fillOpacity={0.4} />}
+                    {type === 'line' && dataKey && <Line type="monotone" dataKey={dataKey} name={name || dataKey.split('.').pop().toUpperCase()} stroke={color} strokeWidth={1.5} dot={false} />}
+                    {secondaryKey && <Line type="monotone" dataKey={secondaryKey} name={secondaryKey.split('.').pop().toUpperCase()} stroke={secondaryColor || '#f97316'} strokeWidth={1.5} dot={false} />}
+                    {tertiaryKey && <Line type="monotone" dataKey={tertiaryKey} name={tertiaryKey.split('.').pop().toUpperCase()} stroke={tertiaryColor || '#f43f5e'} strokeWidth={1} strokeDasharray="3 3" dot={false} />}
+                    {type === 'bar' && dataKey && <Bar dataKey={dataKey} name={name || dataKey.split('.').pop().toUpperCase()} fill={color} fillOpacity={0.4} />}
+                    {type === 'area' && dataKey && <Area type="monotone" dataKey={dataKey} name={name || dataKey.split('.').pop().toUpperCase()} fill={color} fillOpacity={0.1} stroke={color} strokeWidth={1.5} dot={false} />}
+                </ComposedChart>
+            </ResponsiveContainer>
+        </div>
+    );
+});
+IndicatorChart.displayName = "IndicatorChart";
+
 export function PriceChart({
     prices,
     loadingPrices,
@@ -140,27 +184,6 @@ export function PriceChart({
     const [showADL, setShowADL] = useState(true);
     const [showForce, setShowForce] = useState(true);
     const [showAO, setShowAO] = useState(true);
-
-    const IndicatorTooltip = ({ active, payload, suffix = "" }: any) => {
-        if (!active || !payload || !payload.length) return null;
-        const data = payload[0].payload;
-        const dateStr = new Date(data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-
-        return (
-            <div className="bg-slate-950/90 backdrop-blur-md border border-white/10 rounded-lg p-2 shadow-xl border-l-2 border-l-indigo-500">
-                <div className="text-[8px] text-slate-500 font-black uppercase mb-1">{dateStr}</div>
-                {payload.map((entry: any, index: number) => (
-                    <div key={index} className="flex items-center justify-between gap-4 mt-0.5">
-                        <span className="text-[9px] font-bold uppercase" style={{ color: entry.stroke || entry.fill || '#fff' }}>
-                            {entry.name || (typeof entry.dataKey === 'string' ? entry.dataKey.replace(/.*\./, '') : 'Value')}
-                        </span>
-                        <span className="text-[9px] font-mono text-white">{typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value}{suffix}</span>
-                    </div>
-                ))}
-            </div>
-        );
-    };
-
     const [isSensorsOpen, setIsSensorsOpen] = useState(false);
 
     const dataWithIndicators = useMemo(() => {
@@ -1120,250 +1143,21 @@ export function PriceChart({
                             {/* Scrollable Indicator Chamber */}
                             <div className="flex-1 overflow-y-auto custom-scrollbar bg-slate-900/10 border-t border-white/5 pb-12">
                                 {/* RSI */}
-                                {showRSI && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-amber-500/50 uppercase tracking-widest group-hover:text-amber-500 transition-colors">Relative Strength Index (14)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} ticks={[30, 70]} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="rsi" name="RSI" stroke="#f59e0b" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* MACD */}
-                                {showMACD && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-sky-500/50 uppercase tracking-widest group-hover:text-sky-500 transition-colors">MACD Momentum Pulse</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Bar dataKey="macd.histogram" name="Histogram" fill="#475569" fillOpacity={0.4} />
-                                                <Line type="monotone" dataKey="macd.MACD" name="MACD" stroke="#0ea5e9" strokeWidth={1.5} dot={false} />
-                                                <Line type="monotone" dataKey="macd.signal" name="Signal" stroke="#f97316" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* Awesome Oscillator */}
-                                {showAO && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-emerald-500/50 uppercase tracking-widest group-hover:text-emerald-500 transition-colors">Awesome Oscillator</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Bar dataKey="ao" name="AO" fill="#10b981" fillOpacity={0.4} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* Force Index */}
-                                {showForce && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-rose-500/50 uppercase tracking-widest group-hover:text-rose-500 transition-colors">Force Index (13)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Area type="monotone" dataKey="force" name="Force Index" fill="#f43f5e" fillOpacity={0.1} stroke="#f43f5e" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* Know Sure Thing (KST) */}
-                                {showKST && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-indigo-500/50 uppercase tracking-widest group-hover:text-indigo-500 transition-colors">KST Precision Oscillator</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="kst.kst" name="KST" stroke="#6366f1" strokeWidth={1.5} dot={false} />
-                                                <Line type="monotone" dataKey="kst.signal" name="Signal" stroke="#f43f5e" strokeWidth={1} strokeDasharray="3 3" dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* Rate of Change (ROC) */}
-                                {showROC && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-cyan-500/50 uppercase tracking-widest group-hover:text-cyan-500 transition-colors">Rate of Change (12)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="roc" name="ROC" stroke="#22d3ee" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* MFI */}
-                                {showMFI && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-yellow-500/50 uppercase tracking-widest group-hover:text-yellow-500 transition-colors">Money Flow Index</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} ticks={[20, 80]} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Area type="monotone" dataKey="mfi" name="MFI" fill="#eab308" fillOpacity={0.1} stroke="#eab308" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* Stochastic */}
-                                {showStoch && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-violet-500/50 uppercase tracking-widest group-hover:text-violet-500 transition-colors">Stochastic Momentum (%K/%D)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} ticks={[20, 80]} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="stoch.k" name="Stoch %K" stroke="#a78bfa" strokeWidth={1.5} dot={false} />
-                                                <Line type="monotone" dataKey="stoch.d" name="Stoch %D" stroke="#f472b6" strokeWidth={1} strokeDasharray="3 3" dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* Williams %R */}
-                                {showWR && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-emerald-500/50 uppercase tracking-widest group-hover:text-emerald-500 transition-colors">Williams %R Precision Range</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" domain={[-100, 0]} axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} ticks={[-80, -20]} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="wr" name="Williams %R" stroke="#10b981" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* CCI */}
-                                {showCCI && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-teal-500/50 uppercase tracking-widest group-hover:text-teal-500 transition-colors">Commodity Channel Index</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="cci" name="CCI" stroke="#2dd4bf" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* OBV */}
-                                {showOBV && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-cyan-500/50 uppercase tracking-widest group-hover:text-cyan-500 transition-colors">On-Balance Volume Accumulation</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" hide />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Area type="monotone" dataKey="obv" name="OBV" fill="#06b6d4" fillOpacity={0.1} stroke="#06b6d4" strokeWidth={1} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* ADX */}
-                                {showADX && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-indigo-500/50 uppercase tracking-widest group-hover:text-indigo-500 transition-colors">Average Directional Index (ADX)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" domain={[0, 100]} axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="adx.adx" name="ADX" stroke="#818cf8" strokeWidth={2} dot={false} />
-                                                <Line type="monotone" dataKey="adx.pdi" name="+DI" stroke="#10b981" strokeWidth={1} strokeDasharray="3 3" dot={false} />
-                                                <Line type="monotone" dataKey="adx.mdi" name="-DI" stroke="#f43f5e" strokeWidth={1} strokeDasharray="3 3" dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* ATR */}
-                                {showATR && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-slate-500/50 uppercase tracking-widest group-hover:text-slate-400 transition-colors">Average True Range (ATR)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Area type="monotone" dataKey="atr" name="ATR" fill="#64748b" fillOpacity={0.1} stroke="#64748b" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* ADL */}
-                                {showADL && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-orange-500/50 uppercase tracking-widest group-hover:text-orange-500 transition-colors">Accumulation / Distribution Line</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" hide />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="adl" name="ADL" stroke="#f97316" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
-
-                                {/* TRIX */}
-                                {showTRIX && (
-                                    <div className="h-[140px] pr-6 border-b border-white/5 relative bg-slate-950/20 group">
-                                        <div className="absolute top-2 left-6 z-10 text-[8px] font-black text-pink-500/50 uppercase tracking-widest group-hover:text-pink-500 transition-colors">Triple Exponential Average (TRIX)</div>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <ComposedChart data={combinedData} margin={{ top: 25, right: 20, left: 20, bottom: 5 }}>
-                                                <CartesianGrid strokeDasharray="0" vertical={false} stroke="rgba(255,255,255,0.02)" />
-                                                <XAxis dataKey="date" hide />
-                                                <YAxis orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#334155', fontSize: 8 }} />
-                                                <RechartsTooltip content={<IndicatorTooltip />} />
-                                                <Line type="monotone" dataKey="trix" name="TRIX" stroke="#ec4899" strokeWidth={1.5} dot={false} />
-                                            </ComposedChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                )}
+                                {showRSI && <IndicatorChart title="Relative Strength Index (14)" color="#f59e0b" dataKey="rsi" data={combinedData} domain={[0, 100]} ticks={[30, 70]} />}
+                                {showMACD && <IndicatorChart title="MACD Momentum Pulse" color="#0ea5e9" dataKey="macd.MACD" secondaryKey="macd.signal" barKey="macd.histogram" data={combinedData} />}
+                                {showAO && <IndicatorChart title="Awesome Oscillator" color="#10b981" dataKey="ao" data={combinedData} type="bar" />}
+                                {showForce && <IndicatorChart title="Force Index (13)" color="#f43f5e" dataKey="force" data={combinedData} type="area" />}
+                                {showKST && <IndicatorChart title="KST Precision Oscillator" color="#6366f1" dataKey="kst.kst" secondaryKey="kst.signal" secondaryColor="#f43f5e" data={combinedData} />}
+                                {showROC && <IndicatorChart title="Rate of Change (12)" color="#22d3ee" dataKey="roc" data={combinedData} />}
+                                {showMFI && <IndicatorChart title="Money Flow Index" color="#eab308" dataKey="mfi" data={combinedData} type="area" domain={[0, 100]} ticks={[20, 80]} />}
+                                {showStoch && <IndicatorChart title="Stochastic Momentum (%K/%D)" color="#a78bfa" dataKey="stoch.k" secondaryKey="stoch.d" secondaryColor="#f472b6" data={combinedData} domain={[0, 100]} ticks={[20, 80]} />}
+                                {showWR && <IndicatorChart title="Williams %R Precision Range" color="#10b981" dataKey="wr" data={combinedData} domain={[-100, 0]} ticks={[-80, -20]} />}
+                                {showCCI && <IndicatorChart title="Commodity Channel Index" color="#2dd4bf" dataKey="cci" data={combinedData} />}
+                                {showOBV && <IndicatorChart title="On-Balance Volume Accumulation" color="#06b6d4" dataKey="obv" data={combinedData} type="area" />}
+                                {showADX && <IndicatorChart title="Average Directional Index (ADX)" color="#818cf8" dataKey="adx.adx" secondaryKey="adx.pdi" secondaryColor="#10b981" tertiaryKey="adx.mdi" tertiaryColor="#f43f5e" data={combinedData} domain={[0, 100]} />}
+                                {showATR && <IndicatorChart title="Average True Range (ATR)" color="#64748b" dataKey="atr" data={combinedData} type="area" />}
+                                {showADL && <IndicatorChart title="Accumulation / Distribution Line" color="#f97316" dataKey="adl" data={combinedData} />}
+                                {showTRIX && <IndicatorChart title="Triple Exponential Average (TRIX)" color="#ec4899" dataKey="trix" data={combinedData} />}
                             </div>
 
                             <div className="h-10 bg-slate-900/20 border-t border-white/5 flex items-center justify-between px-20 shrink-0">

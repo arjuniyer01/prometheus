@@ -188,6 +188,8 @@ export const analyzeTicker = inngest.createFunction(
         - institutional_analysis: A 3-sentence synthesis of analyst consensus, insider behavior, and earnings surprise consistency.
         - sentiment_summary: A 2-sentence synthesis of headlines.
         - sentiment_score: 0-100
+        - intrinsic_value: A number representing the AI's calculated fair value per share based on DCF/Multiples.
+        - valuation_analysis: A 2-sentence explanation of the valuation logic and safety margin.
         - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score, institutional_score }
         - financial_subscores: { profitability, growth, solvency }
         - trend_subscores: { 
@@ -318,6 +320,8 @@ export const analyzeTicker = inngest.createFunction(
                     financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, regulatory risk, market sentiment, momentum, and sector intelligence",
                     financial_score_drivers: aiAnalysis.financial_score_drivers || [],
                     score_criteria: aiAnalysis.score_criteria || "Score pending analysis depth.",
+                    intrinsic_value: aiAnalysis.intrinsic_value || 0,
+                    valuation_analysis: aiAnalysis.valuation_analysis || "Valuation pending deep fundamental scan.",
                     last_sec_filing: (secData.submissions as any)?.[0]
                         ? `${(secData.submissions as any)[0].type} (${(secData.submissions as any)[0].date})`
                         : 'N/A',
