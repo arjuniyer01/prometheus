@@ -2,7 +2,13 @@ import YahooFinance from 'yahoo-finance2';
 
 const yahooFinance = new (YahooFinance as any)();
 
-// Suppress notices and strict validation to keep console clean and resilient
+// Helper to safely extract raw value from Yahoo Finance objects
+function toRaw(val: any): any {
+    if (val === null || val === undefined) return val;
+    if (typeof val === 'object' && 'raw' in val) return val.raw;
+    return val;
+}
+
 if (typeof (yahooFinance as any).setGlobalConfig === 'function') {
     (yahooFinance as any).setGlobalConfig({
         validation: {
@@ -129,13 +135,13 @@ export async function getYahooIncomeStatement(symbol: string, period: 'annual' |
         return history.map((item: any) => ({
             date: item.endDate instanceof Date ? item.endDate.toISOString().split('T')[0] : item.endDate,
             symbol: symbol,
-            revenue: item.totalRevenue,
-            netIncome: item.netIncome,
-            operatingIncome: item.operatingIncome,
-            costOfRevenue: item.costOfRevenue,
-            grossProfit: item.grossProfit,
-            ebitda: item.ebitda,
-            eps: item.netIncome / (item.totalRevenue || 1),
+            revenue: toRaw(item.totalRevenue),
+            netIncome: toRaw(item.netIncome),
+            operatingIncome: toRaw(item.operatingIncome),
+            costOfRevenue: toRaw(item.costOfRevenue),
+            grossProfit: toRaw(item.grossProfit),
+            ebitda: toRaw(item.ebitda),
+            eps: toRaw(item.netIncome) / (toRaw(item.totalRevenue) || 1),
         }));
     } catch (error) {
         console.error(`Yahoo Finance income statement failed for ${symbol}:`, error);
@@ -157,11 +163,11 @@ export async function getYahooBalanceSheet(symbol: string, period: 'annual' | 'q
         return history.map((item: any) => ({
             date: item.endDate instanceof Date ? item.endDate.toISOString().split('T')[0] : item.endDate,
             symbol: symbol,
-            totalAssets: item.totalAssets,
-            totalLiabilities: item.totalLiabilitiesNetMinorityInterest,
-            totalStockholdersEquity: item.totalEquityGrossMinorityInterest,
-            cashAndCashEquivalents: item.cashAndCashEquivalents,
-            totalDebt: (item.shortLongTermDebt || 0) + (item.longTermDebt || 0),
+            totalAssets: toRaw(item.totalAssets),
+            totalLiabilities: toRaw(item.totalLiabilitiesNetMinorityInterest),
+            totalStockholdersEquity: toRaw(item.totalEquityGrossMinorityInterest),
+            cashAndCashEquivalents: toRaw(item.cashAndCashEquivalents),
+            totalDebt: (toRaw(item.shortLongTermDebt) || 0) + (toRaw(item.longTermDebt) || 0),
         }));
     } catch (error) {
         console.error(`Yahoo Finance balance sheet failed for ${symbol}:`, error);
@@ -183,12 +189,12 @@ export async function getYahooCashFlow(symbol: string, period: 'annual' | 'quart
         return history.map((item: any) => ({
             date: item.endDate instanceof Date ? item.endDate.toISOString().split('T')[0] : item.endDate,
             symbol: symbol,
-            netIncome: item.netIncome,
-            operatingCashFlow: item.totalCashFromOperatingActivities,
-            investingCashFlow: item.totalCashflowsFromInvestingActivities,
-            financingCashFlow: item.totalCashFromFinancingActivities,
-            capitalExpenditures: item.capitalExpenditures,
-            freeCashFlow: (item.totalCashFromOperatingActivities || 0) + (item.capitalExpenditures || 0)
+            netIncome: toRaw(item.netIncome),
+            operatingCashFlow: toRaw(item.totalCashFromOperatingActivities),
+            investingCashFlow: toRaw(item.totalCashflowsFromInvestingActivities),
+            financingCashFlow: toRaw(item.totalCashFromFinancingActivities),
+            capitalExpenditures: toRaw(item.capitalExpenditures),
+            freeCashFlow: (toRaw(item.totalCashFromOperatingActivities) || 0) + (toRaw(item.capitalExpenditures) || 0)
         }));
     } catch (error) {
         console.error(`Yahoo Finance cash flow failed for ${symbol}:`, error);
@@ -208,35 +214,35 @@ export async function getYahooMetrics(symbol: string) {
 
         return {
             symbol: symbol,
-            pe: financialData.trailingPE || stats.trailingPE,
-            forwardPe: financialData.forwardPE || stats.forwardPE,
-            psRatio: stats.priceToSalesTrailing12Months,
-            pbRatio: stats.priceToBook,
-            dividendYield: stats.dividendYield,
-            roe: financialData.returnOnEquity,
-            roa: financialData.returnOnAssets,
-            debtToEquity: financialData.debtToEquity,
-            currentRatio: financialData.currentRatio,
-            quickRatio: financialData.quickRatio,
-            netProfitMargin: financialData.profitMargins,
-            operatingMargin: financialData.operatingMargins,
-            revenueGrowth: financialData.revenueGrowth,
-            earningsGrowth: financialData.earningsGrowth,
-            freeCashFlow: financialData.freeCashflow,
-            totalCash: financialData.totalCash,
-            totalDebt: financialData.totalDebt,
-            bookValue: stats.bookValue,
-            beta: stats.beta,
+            pe: toRaw(financialData.trailingPE || stats.trailingPE),
+            forwardPe: toRaw(financialData.forwardPE || stats.forwardPE),
+            psRatio: toRaw(stats.priceToSalesTrailing12Months),
+            pbRatio: toRaw(stats.priceToBook),
+            dividendYield: toRaw(stats.dividendYield),
+            roe: toRaw(financialData.returnOnEquity),
+            roa: toRaw(financialData.returnOnAssets),
+            debtToEquity: toRaw(financialData.debtToEquity),
+            currentRatio: toRaw(financialData.currentRatio),
+            quickRatio: toRaw(financialData.quickRatio),
+            netProfitMargin: toRaw(financialData.profitMargins),
+            operatingMargin: toRaw(financialData.operatingMargins),
+            revenueGrowth: toRaw(financialData.revenueGrowth),
+            earningsGrowth: toRaw(financialData.earningsGrowth),
+            freeCashFlow: toRaw(financialData.freeCashflow),
+            totalCash: toRaw(financialData.totalCash),
+            totalDebt: toRaw(financialData.totalDebt),
+            bookValue: toRaw(stats.bookValue),
+            beta: toRaw(stats.beta),
             // Expanded stats
-            enterpriseValue: stats.enterpriseValue,
-            enterpriseToRevenue: stats.enterpriseToRevenue,
-            enterpriseToEbitda: stats.enterpriseToEbitda,
-            sharesOutstanding: stats.sharesOutstanding,
-            floatShares: stats.floatShares,
-            heldPercentInsiders: stats.heldPercentInsiders,
-            heldPercentInstitutions: stats.heldPercentInstitutions,
-            shortRatio: stats.shortRatio,
-            shortPercentOfFloat: stats.shortPercentOfFloat,
+            enterpriseValue: toRaw(stats.enterpriseValue),
+            enterpriseToRevenue: toRaw(stats.enterpriseToRevenue),
+            enterpriseToEbitda: toRaw(stats.enterpriseToEbitda),
+            sharesOutstanding: toRaw(stats.sharesOutstanding),
+            floatShares: toRaw(stats.floatShares),
+            heldPercentInsiders: toRaw(stats.heldPercentInsiders),
+            heldPercentInstitutions: toRaw(stats.heldPercentInstitutions),
+            shortRatio: toRaw(stats.shortRatio),
+            shortPercentOfFloat: toRaw(stats.shortPercentOfFloat),
             earningsTrend: trend.trend || []
         };
     } catch (error) {

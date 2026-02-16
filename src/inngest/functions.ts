@@ -23,6 +23,7 @@ import {
 } from "@/lib/scrapers";
 import { generateStructuredAnalysis } from "@/lib/gemini";
 import { getAnalysisVersion } from "@/lib/git-utils";
+import { calculateDeterministicScore } from "@/lib/scoring-engine";
 
 export const analyzeTicker = inngest.createFunction(
     { id: "analyze-ticker", name: "Analyze Ticker Full Workflow" },
@@ -135,6 +136,41 @@ export const analyzeTicker = inngest.createFunction(
         });
 
         const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        // --- PRE-CALCULATE DETERMINISTIC SCORES ---
+        let lastQuartersRevGrowth = 0;
+        if (data.quarterlyIncome && data.quarterlyIncome.length >= 5) {
+            try {
+                lastQuartersRevGrowth = ((data.quarterlyIncome[0].revenue - data.quarterlyIncome[4].revenue) / data.quarterlyIncome[4].revenue);
+            } catch (e) {
+                lastQuartersRevGrowth = 0;
+            }
+        }
+
+        // Fallback to metrics if manual calc fails (Yahoo often missing quarterly data now)
+        if (!lastQuartersRevGrowth && data.metrics?.revenueGrowth) {
+            lastQuartersRevGrowth = data.metrics.revenueGrowth;
+        }
+
+        const computedSma200 = (data.historicalPrices && data.historicalPrices.length >= 200)
+            ? (data.historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
+            : 0;
+
+        const deterministicScore = calculateDeterministicScore({
+            roe: data.ratios?.roe || 0,
+            netMargin: data.ratios?.netProfitMargin || 0,
+            revenueGrowth: lastQuartersRevGrowth,
+            debtToEquity: (data.ratios?.debtToEquity || 0) / 100, // Yahoo uses % (e.g. 150), we scrore on ratio (1.5)
+            interestCoverage: data.ratios?.interestCoverage,
+            currentPrice: data.quote?.price || 0,
+            sma200: computedSma200,
+            momentumAnalysis: {
+                isOutperformingSector: (data.quote?.changesPercentage || 0) > (Array.isArray(sectorData.current) ? 0 : (sectorData.current as any)?.changesPercentage || 0),
+                volumeBreakout: (data.quote?.volume || 0) > (data.quote?.avgVolume || 0)
+            },
+            market: 'US'
+        });
+
         const aiAnalysis = await step.run("generate-ai-insights", async () => {
             console.log(`Generating Gemini insights for ${ticker}...`);
 
@@ -142,9 +178,53 @@ export const analyzeTicker = inngest.createFunction(
         Analyze the following financial, regulatory, and news data for ${ticker} and act as a "Technical Copilot" for a retail investor.
         
         CURRENT DATE: ${today}
+        
+        ---
+        
+        ### PART 1: DETERMINISTIC SCORING (DO NOT RESCORE THESE)
+        I have already calculated the Financial (40%) and Technical (20%) scores based on hard data.
+        You MUST use these base values and only add your Qualitative score (40%) on top.
+        
+        **CALCULATED BASE SCORES:**
+        - **Financial Health (40% Weight)**: ${deterministicScore.components.financial}/100
+          - Profitability: ${deterministicScore.breakdown.profitability}/100
+          - Growth trend: ${deterministicScore.breakdown.growth}/100
+          - Solvency: ${deterministicScore.breakdown.solvency}/100
+        - **Technical Momentum (20% Weight)**: ${deterministicScore.components.technical}/100
+          - Trend: ${deterministicScore.breakdown.trend}/100
+        
+        **DETECTED FLAGS (Cite these in your analysis):**
+        ${deterministicScore.flags.map(f => `- [${f.impact.toUpperCase()}] ${f.label}`).join('\n')}
+
+        ---
+
+        ### PART 2: QUALITATIVE SCORING RUBRIC (YOUR JOB)
+        You must score the remaining 40% based on your synthesis of the text data.
+        
+        **A. Management Quality (10%)**
+        - SCORE 0: Fraud history, massive insider selling, missed guidance.
+        - SCORE 50: Standard governance, no major signals.
+        - SCORE 100: Founder-led, heavy insider buying (>3 clusters), smart capital allocation (buybacks at lows).
+        
+        **B. Moat & Competitive Advantage (10%)**
+        - **USE "Business Summary" for context.**
+        - SCORE 0: Commodity product, price taker, low margins.
+        - SCORE 100: Monopoly pricing power, legacy brand, massive network effects, high switching costs.
+        
+        **C. Regulatory/Political Risk (10%)**
+        - **USE "Business Summary" for structural risk AND "News Headlines" for active litigation.**
+        - SCORE 0: Active DOJ/FTC investigation, existential tariff risk, delisting threats.
+        - SCORE 100: Clean regulatory bill, government contracts, essential utility status, high patent protection.
+        
+        **D. Sentiment/News (10%)**
+        - **USE "News Headlines" for context.**
+        - SCORE 0: "Accounting irregularities", "CEO resigns", hit pieces.
+        - SCORE 100: "Product breakthrough", "Earnings blowout", universal alpha target upgrades.
+
+        ---
 
         CRITICAL INSTRUCTIONS:
-        1. SEC SYNTHESIS: You MUST synthesize the last 5 filings provided. Do not just look at the most recent one.
+        1. SEC SYNTHESIS: You MUST analyze the 'SEC Filings' metadata for reporting consistency (e.g., frequent 8-Ks). For actual regulatory CONTENT, you MUST look at the 'Business Summary' and 'News Headlines'.
         2. QUARTERLY ANALYSIS: Analyze the last 5 quarterly income statements. Look for acceleration or deceleration in revenue, margin trends, and expense control.
         3. ANNUAL TRENDS: Summarize the 5-year trajectory of the P&L and Balance Sheet.
         4. MARKET PULSE: Provide a highly specific analysis of the news headlines.
@@ -153,13 +233,19 @@ export const analyzeTicker = inngest.createFunction(
            - Analyze sector seasonality (e.g., is this sector historically strong or weak this time of year?). Use ${today} to determine the current season.
            - Identify sector rotation signals (is capital moving into or out of ${data.profile.sector}?).
         
-        6. INSTITUTIONAL INTELLIGENCE: 
-           - Analyze the Analyst Recommendations trend. Is consensus moving toward Buy or Hold?
-           - Analyze Insider Transactions. Is there notable net selling by top executives?
-           - Analyze Earnings History. Has the company consistently beaten estimates?
+        6. CONTEXT INTELLIGENCE (THE EDGE):
+           - **Macro Overlay**: Consider the current 10Y Yield environment. If yields are rising (>4%), punish high-debt companies heavily in your qualitative risk assessment.
+           - **Sector KPIs**:
+             - If Retail: Focus on Inventory Turnover.
+             - If SaaS: Focus on Rule of 40.
+             - If Banks: Focus on Net Interest Margin.
+           - **Insider Precision**: Look for "Cluster Buys" (multiple officers buying). This is a Strong Buy signal (Score 10 for Management). Option exercises are Neutral.
         
-        7. OPINIONATED ANALYSIS: Do not be overly cautious. Act like a hedge fund analyst. If a metric is strong compared to peers or history, mark it "positive". If it's a risk, mark it "negative". Avoid "neutral" unless it's truly unremarkable.
-        8. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the sectorData snapshots, provide a representative score (0-100).
+        8. DATA HONESTY: Do not hallucinate. If 'SEC Filings' metadata is all you have, do not claim to have read the full 10-K text. Instead, base your regulatory risk on the 'Business Summary' and 'News Headlines'. If specific institutional or sector data is missing, mark it "Neutral (50)" and explicitly state "Insufficient Data" in the explanation.
+        9. OPINIONATED ANALYSIS: Do not be overly cautious. Act like a hedge fund analyst. If a metric is strong compared to peers or history, mark it "positive". If it's a risk, mark it "negative". Avoid "neutral" unless it's truly unremarkable or data is missing.
+        8. SCORE INTEGRITY: 
+           - Use the PRE-CALCULATED Financial/Technical scores for those sections.
+           - The final 'prometheus_score' MUST match the weighted sum of your qualitative scores + the deterministic scores.
         
         DATA:
         Profile: ${JSON.stringify(data.profile)}
@@ -176,7 +262,7 @@ export const analyzeTicker = inngest.createFunction(
         Quarterly Income (Last 5): ${JSON.stringify(data.quarterlyIncome)}
         Quarterly Balance Sheet (Last 5): ${JSON.stringify(data.quarterlyBalance)}
         SEC Profile (FMP): ${JSON.stringify(secData.profile)}
-        SEC Filings (Recent): ${secData.submissions ? JSON.stringify(secData.submissions.slice(0, 10)) : "No SEC filing data available"}
+        SEC Filings (Metadata Only): ${secData.submissions ? JSON.stringify(secData.submissions.slice(0, 10)) : "No SEC filing data available"}
         News Headlines: ${JSON.stringify((newsData || []).map((n: any) => ({ headline: n.title || n.headline, source: n.source, date: n.date || n.datetime })))}
         
         Output as JSON with:
@@ -207,9 +293,9 @@ export const analyzeTicker = inngest.createFunction(
             insider_signal: 0-100,
             earnings_reliability: 0-100
           }
-        - financial_formula: A short string explaining the weighted score formula.
-        - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
-        - prometheus_score: (0.25 * financial_score) + (0.15 * sec_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.15 * sector_score) + (0.15 * institutional_score)
+        - financial_formula: "${Object.keys(deterministicScore.components).map(k => `${k}`).join(' + ')} + Qualitative Alpha",
+        - financial_score_drivers: ${JSON.stringify(deterministicScore.flags)},
+        - prometheus_score: (financial_score * 0.40) + (trend_score * 0.20) + (sec_score * 0.10) + (sentiment_score * 0.10) + (sector_score * 0.10) + (institutional_score * 0.10)
         - score_criteria: A short explanation of why the company got this score.
         - metrics: An array of 25-30 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. 
           REQUIRED METRICS (Exhaustive List): 
@@ -289,6 +375,25 @@ export const analyzeTicker = inngest.createFunction(
             }
 
             // Insert AI Insights
+            const scores = {
+                financial_score: deterministicScore.components.financial,
+                trend_score: deterministicScore.components.technical,
+                sec_score: 0,
+                sentiment_score: 0,
+                sector_score: 0,
+                institutional_score: 0,
+                ...aiAnalysis.score_breakdown
+            };
+
+            const finalScore = Math.round(
+                ((scores.financial_score || 0) * 0.40) +
+                ((scores.trend_score || 0) * 0.20) +
+                ((scores.sec_score || 0) * 0.10) +
+                ((scores.sentiment_score || 0) * 0.10) +
+                ((scores.sector_score || 0) * 0.10) +
+                ((scores.institutional_score || 0) * 0.10)
+            );
+
             const { error: insightError } = await supabase.from('ai_insights').insert({
                 symbol: ticker,
                 summary_text: aiAnalysis.executive_summary,
@@ -312,10 +417,10 @@ export const analyzeTicker = inngest.createFunction(
                     institutional_analysis: aiAnalysis.institutional_analysis,
                     sentiment_summary: aiAnalysis.sentiment_summary,
                     sentiment_score: aiAnalysis.sentiment_score || 50,
-                    prometheus_score: aiAnalysis.prometheus_score || 0,
-                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sec_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0, institutional_score: 0 },
-                    financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
-                    trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 },
+                    prometheus_score: finalScore,
+                    score_breakdown: scores,
+                    financial_subscores: aiAnalysis.financial_subscores || { profitability: deterministicScore.breakdown.profitability, growth: deterministicScore.breakdown.growth, solvency: deterministicScore.breakdown.solvency },
+                    trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: deterministicScore.breakdown.trend, annual_stability: 0 },
                     sector_subscores: aiAnalysis.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 },
                     institutional_subscores: aiAnalysis.institutional_subscores || { analyst_conviction: 0, insider_signal: 0, earnings_reliability: 0 },
                     financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, regulatory risk, market sentiment, momentum, and sector intelligence",

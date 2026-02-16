@@ -131,7 +131,7 @@ export default function Home() {
 
       {selectedSymbol ? (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr_300px] gap-6 items-start">
+          <div className="grid grid-cols-1 lg:grid-cols-[350px_1fr_350px] gap-6 items-start">
             <Suspense fallback={<div className="h-[400px] glass-morphism rounded-3xl animate-pulse bg-white/5" />}>
               <PrometheusReportPanel
                 insight={insight}
