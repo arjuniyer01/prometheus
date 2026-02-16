@@ -50,8 +50,11 @@ export default function RootLayout({
               <span className="text-xl font-bold font-outfit tracking-tight">PROMETHEUS</span>
             </Link>
 
-            <div className="flex items-center gap-4">
-              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/10">In development, information may be incomplete or incorrect</span>
+            <div className="flex items-center gap-6">
+              <nav className="hidden md:flex items-center gap-6 mr-6">
+                <Link href="/" className="text-[10px] font-bold uppercase tracking-widest text-white hover:text-indigo-400 transition-colors">Market Leaderboard</Link>
+              </nav>
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest bg-white/5 px-3 py-1 rounded-full border border-white/10">In development</span>
             </div>
 
           </div>

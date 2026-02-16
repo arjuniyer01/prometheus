@@ -19,6 +19,7 @@ import {
 } from "@/lib/scrapers-india";
 import { getNSEAnnouncements } from "@/lib/news-rss";
 import { generateStructuredAnalysis } from "@/lib/gemini";
+import { getAnalysisVersion } from "@/lib/git-utils";
 
 /**
  * Helper to pivot Indian API column-based data into row-based data
@@ -498,7 +499,8 @@ export const analyzeTickerIndia = inngest.createFunction(
                         extended_profile: data.profile,
                         extended_metrics: data.ratios,
                         corporate_actions: data.corporateActions
-                    }
+                    },
+                    analysis_version: getAnalysisVersion()
                 }
 
             });

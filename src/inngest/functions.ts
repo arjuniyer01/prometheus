@@ -22,6 +22,7 @@ import {
     getSustainability
 } from "@/lib/scrapers";
 import { generateStructuredAnalysis } from "@/lib/gemini";
+import { getAnalysisVersion } from "@/lib/git-utils";
 
 export const analyzeTicker = inngest.createFunction(
     { id: "analyze-ticker", name: "Analyze Ticker Full Workflow" },
@@ -337,7 +338,8 @@ export const analyzeTicker = inngest.createFunction(
                         full_analysis: sectorData.fullAnalysis,
                         extended_profile: data.profile,
                         extended_metrics: data.metrics
-                    }
+                    },
+                    analysis_version: getAnalysisVersion()
                 }
             });
 

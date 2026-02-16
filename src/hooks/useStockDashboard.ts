@@ -40,6 +40,16 @@ export function useStockDashboard() {
         if (data && data.length > 0) {
             setTickers(data);
             if (!selectedSymbol) {
+                // Check if there's a ticker in the URL search params (client-side only)
+                if (typeof window !== 'undefined') {
+                    const params = new URLSearchParams(window.location.search);
+                    const tickerParam = params.get('ticker');
+                    if (tickerParam && data.find(t => t.symbol === tickerParam)) {
+                        setSelectedSymbol(tickerParam);
+                        setLoading(false);
+                        return;
+                    }
+                }
                 const hasAAPL = data.find(t => t.symbol === "AAPL");
                 setSelectedSymbol(hasAAPL ? "AAPL" : data[0].symbol);
             }

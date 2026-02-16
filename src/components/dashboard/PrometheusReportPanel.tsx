@@ -34,6 +34,9 @@ export function PrometheusReportPanel({
                     <div className="flex flex-col items-end">
                         {insight?.created_at && (
                             <span className="text-[9px] text-slate-600 font-mono pr-1">
+                                {insight?.metadata?.analysis_version && (
+                                    <span className="text-indigo-400/60 font-black mr-2">[{insight.metadata.analysis_version}]</span>
+                                )}
                                 SYNTHESIZED: {new Date(insight.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </span>
                         )}

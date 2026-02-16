@@ -41,6 +41,13 @@ export function DeepFundamentalAnalysis({ insight, selectedSymbol }: DeepFundame
                         {insight?.metadata?.sector_analysis || "Sector rotation and seasonality analysis pending..."}
                     </p>
                 </div>
+                {insight?.metadata?.analysis_version && (
+                    <div className="pt-2 flex justify-end">
+                        <span className="text-[8px] font-black font-mono text-slate-700 uppercase tracking-widest">
+                            Engine Release: {insight.metadata.analysis_version}
+                        </span>
+                    </div>
+                )}
             </GlassCard>
 
             <div className="flex items-center gap-2 mb-2 mt-4">

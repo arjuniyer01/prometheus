@@ -115,9 +115,18 @@ We do not rely on standard API news endpoints (often delayed or limited).
     2.  **Yahoo Finance**: `https://feeds.finance.yahoo.com/rss/2.0/headline?s={SYMBOL}` (High speed).
 *   **Deduplication**: The `news-rss.ts` utility merges these streams, filtering out duplicates based on flexible Levenshtein distance on titles or exact URL matching.
 
+#### H. Analysis Versioning & Traceability
+To track the evolution of the Prometheus "Alpha" narratives, every AI insight is tagged with a release version.
+*   **Version Source**: The version is derived from `git describe --tags --always --dirty`.
+*   **Storage**: The version is persisted in the `metadata.analysis_version` field within the `ai_insights` table.
+*   **Legacy Data**: All analyses generated prior to the versioning implementation (Feb 16, 2026) are tagged as `v0`.
+*   **UI Integration**: Both the **Report Panel** (Synthesis Summary) and the **Deep Fundamental Analysis** components display the "Engine Release" tag to help researchers distinguish between different iterations of the analysis engine.
+
 ### 4. Codebase Navigation
-*   `src/app/page.tsx`: The main entry point. Now a clean orchestrator using modular components and hooks.
-*   `src/hooks/useStockDashboard.ts`: Centralizes state management, Supabase data fetching, and real-time updates for the dashboard.
+*   `src/app/page.tsx`: The main landing page featuring the **Market Leaderboard**.
+*   `src/app/terminal/page.tsx`: The high-performance research terminal (formerly the main page).
+*   `src/hooks/useStockDashboard.ts`: Centralizes state management, Supabase data fetching, and real-time updates for the terminal.
+*   `src/components/dashboard/Leaderboard.tsx`: The main leaderboard UI with spotlight and search.
 *   `src/components/dashboard/`: Contains modular UI components:
     *   `TickerSearch.tsx`: Search and asset selection.
     *   `PriceChart.tsx`: Recharts-based charting engine (Area/Candles).
@@ -149,6 +158,7 @@ We do not rely on standard API news endpoints (often delayed or limited).
     *   Adaptive layout that prioritizes **Ownership Structure** for mid-caps.
     *   Fallback to **Regulatory Pulse** (Corporate Actions) when insider trades are missing.
 *   **Zoom/Pan Charts**: Fully interactive historical data navigation.
+*   **Market Leaderboard**: Central index of all analyzed assets with Prometheus Score ranking and search.
 
 #### 🚧 In Progress / Roadmap
 *   **DCF Modelling**: Logic exists in `scrapers.ts` (commented out) but need a cleaner UI implementation.
@@ -165,4 +175,4 @@ We do not rely on standard API news endpoints (often delayed or limited).
 *   **"ReferenceError: Cannot access 'X' before initialization"**: In large `useCallback` hooks (like `downloadReport` in `page.tsx`), standard JavaScript scoping applies. Helper functions defined with `const` must be declared *before* they are used. They are not hoisted like `function` declarations.
 
 ---
-*Last Updated: Feb 01, 2026 - System Version 2.3 (The "Global Identity & Fallback" Update)*
+*Last Updated: Feb 16, 2026 - System Version 2.4 (The "Alpha Discovery & Leaderboard" Update)*
