@@ -17,9 +17,10 @@ import {
     getFullAnalysisIndia,
     getSustainabilityIndia
 } from "@/lib/scrapers-india";
-import { getNSEAnnouncements } from "@/lib/news-rss";
+
 import { generateStructuredAnalysis } from "@/lib/gemini";
 import { getAnalysisVersion } from "@/lib/git-utils";
+import { calculateDeterministicScore } from "@/lib/scoring-engine";
 
 /**
  * Helper to pivot Indian API column-based data into row-based data
@@ -210,11 +211,8 @@ export const analyzeTickerIndia = inngest.createFunction(
 
         await step.sleep("wait-2", "1s");
         const corporateActions = await step.run("fetch-corporate-actions", async () => {
-            const [actions, nseAnnouncements] = await Promise.all([
-                getCorporateActionsIndia(ticker),
-                getNSEAnnouncements(ticker)
-            ]);
-            return { actions, nseAnnouncements };
+            const actions = await getCorporateActionsIndia(ticker);
+            return { actions, nseAnnouncements: [] };
         });
 
         await step.sleep("wait-3", "1s");
@@ -277,6 +275,36 @@ export const analyzeTickerIndia = inngest.createFunction(
 
 
         const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+        // --- PRE-CALCULATE DETERMINISTIC SCORES ---
+        let lastQuartersRevGrowth = 0;
+        const quarterlyFins = pivotFinancials(data.financials?.quarter);
+        if (quarterlyFins.length >= 5) {
+            lastQuartersRevGrowth = ((quarterlyFins[0].revenue - quarterlyFins[4].revenue) / quarterlyFins[4].revenue);
+        }
+
+        // Fallback to ratios if manual calc yields 0 or fails
+        if (!lastQuartersRevGrowth && (data.ratios as any)?.revenueGrowth) {
+            lastQuartersRevGrowth = (data.ratios as any).revenueGrowth;
+        }
+
+        const deterministicScore = calculateDeterministicScore({
+            roe: (data.ratios as any)?.roe || 0,
+            netMargin: (data.ratios as any)?.netProfitMargin || 0,
+            revenueGrowth: lastQuartersRevGrowth,
+            debtToEquity: ((data.ratios as any)?.debtToEquity || 0) / 100, // Normalize % to Ratio
+            interestCoverage: 0,
+            currentPrice: data.profile?.price || 0,
+            sma200: (data.historicalPrices && data.historicalPrices.length > 200)
+                ? (data.historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
+                : 0,
+            momentumAnalysis: {
+                isOutperformingSector: (data.profile?.changesPercentage || 0) > ((data.sectorData as any)?.indexHistory?.[0]?.changesPercentage || 0),
+                volumeBreakout: (data.profile?.averageVolume || 0) > 0 && (data.profile?.volume || 0) > (data.profile?.averageVolume || 0)
+            },
+            market: 'INDIA'
+        });
+
         const aiAnalysis = await step.run("generate-ai-insights-india", async () => {
             console.log(`Generating Gemini insights for ${ticker} (India)...`);
 
@@ -284,6 +312,50 @@ export const analyzeTickerIndia = inngest.createFunction(
         Analyze the following financial and news data for ${ticker} on the NSE/BSE and act as a "Technical Copilot" for a retail investor.
         
         CURRENT DATE: ${today}
+
+        ---
+
+        ### PART 1: DETERMINISTIC SCORING (DO NOT RESCORE THESE)
+        I have already calculated the Financial (40%) and Technical (20%) scores based on hard data.
+        You MUST use these base values and only add your Qualitative score (40%) on top.
+        
+        **CALCULATED BASE SCORES:**
+        - **Financial Health (40% Weight)**: ${deterministicScore.components.financial}/100
+          - Profitability: ${deterministicScore.breakdown.profitability}/100
+          - Growth trend: ${deterministicScore.breakdown.growth}/100
+          - Solvency: ${deterministicScore.breakdown.solvency}/100
+        - **Technical Momentum (20% Weight)**: ${deterministicScore.components.technical}/100
+          - Trend: ${deterministicScore.breakdown.trend}/100
+        
+        **DETECTED FLAGS (Cite these in your analysis):**
+        ${deterministicScore.flags.map(f => `- [${f.impact.toUpperCase()}] ${f.label}`).join('\n')}
+
+        ---
+        
+        ### PART 2: QUALITATIVE SCORING RUBRIC (YOUR JOB)
+        You must score the remaining 40% based on your synthesis of the text data.
+        
+        **A. Management Quality (10%)**
+        - SCORE 0: Fraud/Scandal, massive insider dumping, pledge issues.
+        - SCORE 50: Standard governance, clean audit.
+        - SCORE 100: Tata/HDFC level governance, clean promoter history, high promoter trust.
+        
+        **B. Moat & Competitive Advantage (10%)**
+        - **USE "Profile Description" for context.**
+        - SCORE 0: Commodity player, no pricing power.
+        - SCORE 100: Market leader, localized brand love (e.g., Maggi, Asian Paints), massive distribution network.
+        
+        **C. Regulatory/Political Risk (10%)**
+        - **USE "Recent Announcements" and "Corporate Actions" for context.**
+        - SCORE 0: IT raids, SEBI warnings, heavy export duty risk.
+        - SCORE 100: Aligned with "PLI" schemes, clean board history, government preferred sector.
+        
+        **D. Sentiment/News (10%)**
+        - **USE "News Headlines" for context.**
+        - SCORE 0: Negative headlines, IT raids, short seller reports.
+        - SCORE 100: "Multibagger" potential buzz, strong double-digit growth guidance.
+
+        ---
 
         CRITICAL INSTRUCTIONS (INDIAN CONTEXT):
         1. TERMINOLOGY: Use Indian financial terminology (Crores, Lakhs). 1 Crore = 10,000,000; 1 Lakh = 100,000; 100 Crores = 1 Billion.
@@ -302,7 +374,8 @@ export const analyzeTickerIndia = inngest.createFunction(
            - Analyze Insider Transactions (if available). Is there notable net selling in the Indian markets?
            - Analyze Earnings History. Has the company consistently beaten estimates on the NSE/BSE?
         
-        7. OPINIONATED ANALYSIS: Do not be overly cautious. Act like an institutional equity research analyst. If a metric is strong compared to Nifty peers or historical trends (like superior PE conversion or ROE), mark it "positive". If it's a structural risk (high debt-to-equity, margin pressure), mark it "negative". Avoid "neutral" unless it's truly unremarkable.
+        7. DATA HONESTY: Do not hallucinate. If data for a specific quadrant is missing, do not invent stories. Instead, base your risk assessment on the 'Profile Description' and 'News headlines'. If information is truly unavailable, mark it "Neutral (50)" and state "Insufficient context".
+        8. OPINIONATED ANALYSIS: Do not be overly cautious. Act like an institutional equity research analyst. If a metric is strong compared to Nifty peers or historical trends (like superior PE conversion or ROE), mark it "positive". If it's a structural risk (high debt-to-equity, margin pressure), mark it "negative". Avoid "neutral" unless it's truly unremarkable.
         8. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the indexHistory, provide a representative score (0-100).
         
         DATA (NOTE: Values like marketCap, revenue, etc. are in absolute INR units unless specified):
@@ -329,7 +402,7 @@ export const analyzeTickerIndia = inngest.createFunction(
         - sentiment_score: 0-100
         - intrinsic_value: A number representing the AI's calculated fair value per share in INR based on DCF/Multiples.
         - valuation_analysis: A 2-sentence explanation of the valuation logic relative to the Indian market.
-        - score_breakdown: { financial_score, sentiment_score, trend_score, sector_score, institutional_score }
+        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score, institutional_score }
         - financial_subscores: { profitability, growth, solvency }
         - trend_subscores: { 
             quarterly_momentum: 0-100, 
@@ -347,7 +420,7 @@ export const analyzeTickerIndia = inngest.createFunction(
           }
         - financial_formula: A short string explaining the weighted score formula.
         - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
-        - prometheus_score: (0.30 * financial_score) + (0.15 * sentiment_score) + (0.15 * trend_score) + (0.20 * sector_score) + (0.20 * institutional_score)
+        - prometheus_score: (financial_score * 0.40) + (trend_score * 0.20) + (sec_score * 0.10) + (sentiment_score * 0.10) + (sector_score * 0.10) + (institutional_score * 0.10)
         - score_criteria: A short explanation of why the company got this score.
         - metrics: An array of 25-30 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. 
           REQUIRED METRICS (Exhaustive List): 
@@ -448,7 +521,25 @@ export const analyzeTickerIndia = inngest.createFunction(
                 if (finError) console.error("Error persisting Indian financials:", finError);
             }
 
-            // Insert AI Insights
+            const scores = {
+                financial_score: deterministicScore.components.financial,
+                trend_score: deterministicScore.components.technical,
+                sec_score: 0,
+                sentiment_score: 0,
+                sector_score: 0,
+                institutional_score: 0,
+                ...aiAnalysis.score_breakdown
+            };
+
+            const finalScore = Math.round(
+                ((scores.financial_score || 0) * 0.40) +
+                ((scores.trend_score || 0) * 0.20) +
+                ((scores.sec_score || 0) * 0.10) +
+                ((scores.sentiment_score || 0) * 0.10) +
+                ((scores.sector_score || 0) * 0.10) +
+                ((scores.institutional_score || 0) * 0.10)
+            );
+
             const { error: insightError } = await supabase.from('ai_insights').insert({
                 symbol: ticker,
                 summary_text: aiAnalysis.executive_summary,
@@ -475,17 +566,17 @@ export const analyzeTickerIndia = inngest.createFunction(
                     last_sec_filing: (data.corporateActions?.nseAnnouncements as any)?.[0]?.title || 'N/A',
                     sentiment_summary: aiAnalysis.sentiment_summary || "Headline sentiment tracking initiated...",
                     sentiment_score: aiAnalysis.sentiment_score || 50,
-                    prometheus_score: aiAnalysis.prometheus_score || 0,
-                    score_breakdown: aiAnalysis.score_breakdown || { financial_score: 0, sentiment_score: 0, trend_score: 0, sector_score: 0, institutional_score: 0 },
+                    prometheus_score: finalScore,
+                    score_breakdown: scores,
                     score_criteria: aiAnalysis.score_criteria || "Multidimensional synthesis of fundamental and market signals.",
                     intrinsic_value: aiAnalysis.intrinsic_value || 0,
                     valuation_analysis: aiAnalysis.valuation_analysis || "Valuation pending deep fundamental scan.",
-                    financial_subscores: aiAnalysis.financial_subscores || { profitability: 0, growth: 0, solvency: 0 },
-                    trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: 0, annual_stability: 0 },
+                    financial_subscores: aiAnalysis.financial_subscores || { profitability: deterministicScore.breakdown.profitability, growth: deterministicScore.breakdown.growth, solvency: deterministicScore.breakdown.solvency },
+                    trend_subscores: aiAnalysis.trend_subscores || { quarterly_momentum: deterministicScore.breakdown.trend, annual_stability: 0 },
                     sector_subscores: aiAnalysis.sector_subscores || { outperformance: 0, seasonality_strength: 0, rotation_inflow: 0 },
                     institutional_subscores: aiAnalysis.institutional_subscores || { analyst_conviction: 0, insider_signal: 0, earnings_reliability: 0 },
                     financial_score_drivers: aiAnalysis.financial_score_drivers || [],
-                    financial_formula: aiAnalysis.financial_formula || "Weighted aggregate of core fundamentals, sentiment, momentum, sector, and institutional signals",
+                    financial_formula: aiAnalysis.financial_formula || "${Object.keys(deterministicScore.components).map(k => `${k}`).join(' + ')} + Qualitative Alpha",
                     top_headlines: (data.news || []).map((n: any) => ({
                         headline: n.title || n.headline,
                         url: n.url,
