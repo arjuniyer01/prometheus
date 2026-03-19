@@ -18,7 +18,7 @@ import {
     getSustainabilityIndia
 } from "@/lib/scrapers-india";
 
-import { generateStructuredAnalysis } from "@/lib/gemini";
+// Gemini removed — Claude Code is now the AI engine via /analyze skill
 import { getAnalysisVersion } from "@/lib/git-utils";
 import { calculateDeterministicScore } from "@/lib/scoring-engine";
 
@@ -305,135 +305,10 @@ export const analyzeTickerIndia = inngest.createFunction(
             market: 'INDIA'
         });
 
-        const aiAnalysis = await step.run("generate-ai-insights-india", async () => {
-            console.log(`Generating Gemini insights for ${ticker} (India)...`);
-
-            const prompt = `
-        Analyze the following financial and news data for ${ticker} on the NSE/BSE and act as a "Technical Copilot" for a retail investor.
-        
-        CURRENT DATE: ${today}
-
-        ---
-
-        ### PART 1: DETERMINISTIC SCORING (DO NOT RESCORE THESE)
-        I have already calculated the Financial (40%) and Technical (20%) scores based on hard data.
-        You MUST use these base values and only add your Qualitative score (40%) on top.
-        
-        **CALCULATED BASE SCORES:**
-        - **Financial Health (40% Weight)**: ${deterministicScore.components.financial}/100
-          - Profitability: ${deterministicScore.breakdown.profitability}/100
-          - Growth trend: ${deterministicScore.breakdown.growth}/100
-          - Solvency: ${deterministicScore.breakdown.solvency}/100
-        - **Technical Momentum (20% Weight)**: ${deterministicScore.components.technical}/100
-          - Trend: ${deterministicScore.breakdown.trend}/100
-        
-        **DETECTED FLAGS (Cite these in your analysis):**
-        ${deterministicScore.flags.map(f => `- [${f.impact.toUpperCase()}] ${f.label}`).join('\n')}
-
-        ---
-        
-        ### PART 2: QUALITATIVE SCORING RUBRIC (YOUR JOB)
-        You must score the remaining 40% based on your synthesis of the text data.
-        
-        **A. Management Quality (10%)**
-        - SCORE 0: Fraud/Scandal, massive insider dumping, pledge issues.
-        - SCORE 50: Standard governance, clean audit.
-        - SCORE 100: Tata/HDFC level governance, clean promoter history, high promoter trust.
-        
-        **B. Moat & Competitive Advantage (10%)**
-        - **USE "Profile Description" for context.**
-        - SCORE 0: Commodity player, no pricing power.
-        - SCORE 100: Market leader, localized brand love (e.g., Maggi, Asian Paints), massive distribution network.
-        
-        **C. Regulatory/Political Risk (10%)**
-        - **USE "Recent Announcements" and "Corporate Actions" for context.**
-        - SCORE 0: IT raids, SEBI warnings, heavy export duty risk.
-        - SCORE 100: Aligned with "PLI" schemes, clean board history, government preferred sector.
-        
-        **D. Sentiment/News (10%)**
-        - **USE "News Headlines" for context.**
-        - SCORE 0: Negative headlines, IT raids, short seller reports.
-        - SCORE 100: "Multibagger" potential buzz, strong double-digit growth guidance.
-
-        ---
-
-        CRITICAL INSTRUCTIONS (INDIAN CONTEXT):
-        1. TERMINOLOGY: Use Indian financial terminology (Crores, Lakhs). 1 Crore = 10,000,000; 1 Lakh = 100,000; 100 Crores = 1 Billion.
-        2. UNIT CONVERSION: If you see large absolute numbers (e.g., 29,000,000,000), divide by 10,000,000 to get Crores. DO NOT confuse Million with Crore. 10 Million = 1 Crore.
-        3. DATA VERIFICATION: If Market Cap is 29,000,000,000, it is 2,900 Crores, NOT 29,000 Crores. Check your math!
-        4. STANDALONE vs CONSOLIDATED: Differentiate if provided. Usually Consolidated is preferred for group health.
-        3. REGULATORY SEARCH: Use the provided "Corporate Actions" and "NSE Announcements" to act as the regulatory pulse. Analyze for significant insider moves, board meetings, or regulatory warnings.
-        4. FINANCIAL TRENDS: Analyze the P&L and Balance Sheet trends specifically for the Indian market context (high growth, inflationary environment, sector-specific tailwinds like Digital India).
-        5. SECTOR INTELLIGENCE (INDIA): 
-           - Analyze the stock within its sector: ${data.profile.sector}.
-           - Consider seasonality specific to the Indian market (e.g., Monsoon impact for Auto/Agri, Festive season for Retail/Durables, Q3/Q4 festive demand). Use ${today} to determine the current season.
-           - Identify sector rotation trends in the Indian indices. Use the "Sector Intelligence" data (Trending/Most Active) to see if capital is flowing into this industry.
-        
-        6. INSTITUTIONAL INTELLIGENCE (INDIA): 
-           - Analyze the Analyst Recommendations trend from Yahoo Finance data. Is consensus moving toward Buy or Hold in the Indian context?
-           - Analyze Insider Transactions (if available). Is there notable net selling in the Indian markets?
-           - Analyze Earnings History. Has the company consistently beaten estimates on the NSE/BSE?
-        
-        7. DATA HONESTY: Do not hallucinate. If data for a specific quadrant is missing, do not invent stories. Instead, base your risk assessment on the 'Profile Description' and 'News headlines'. If information is truly unavailable, mark it "Neutral (50)" and state "Insufficient context".
-        8. OPINIONATED ANALYSIS: Do not be overly cautious. Act like an institutional equity research analyst. If a metric is strong compared to Nifty peers or historical trends (like superior PE conversion or ROE), mark it "positive". If it's a structural risk (high debt-to-equity, margin pressure), mark it "negative". Avoid "neutral" unless it's truly unremarkable.
-        8. SCORE INTEGRITY: Do not default to 0 for sector subscores. If the stock is in a trending sector or showing relative strength in the indexHistory, provide a representative score (0-100).
-        
-        DATA (NOTE: Values like marketCap, revenue, etc. are in absolute INR units unless specified):
-        Profile: ${JSON.stringify(data.profile)}
-        Financials: ${JSON.stringify(data.financials)}
-        Ratios: ${JSON.stringify(data.ratios)}
-        Forecasts: ${JSON.stringify(data.forecasts)}
-        Target Price: ${JSON.stringify(data.targets)}
-        Recent Announcements: ${JSON.stringify(data.announcements)}
-        Corporate Actions: ${JSON.stringify(data.corporateActions)}
-        Sector Intelligence (Market Momentum): ${JSON.stringify(data.sectorData)}
-        Institutional Data (Analyst Recs, Insiders, Earnings): ${JSON.stringify(data.extraData.fullAnalysis)}
-        News Headlines: ${JSON.stringify((data.news || []).map((n: any) => ({ headline: n.title, source: n.source, snippet: n.snippet })))}
-        
-        Output as JSON with:
-        - executive_summary: A 2-3 sentence overview of company current health.
-        - layman_analogy: A creative analogy for their business model.
-        - sec_analysis: A 2-sentence synthesis of Corporate Actions & Regulatory News.
-        - quarterly_analysis: A 3-sentence deep dive into recent performance.
-        - annual_trends: A 3-sentence summary of the financial trajectory.
-        - sector_analysis: A 3-sentence analysis of performance vs sector, Indian specific seasonality, and rotation trends. (CRITICAL: Do not put this in the metrics array).
-        - institutional_analysis: A 3-sentence synthesis of analyst consensus, insider behavior, and earnings surprise consistency.
-        - sentiment_summary: A 2-sentence synthesis of headlines.
-        - sentiment_score: 0-100
-        - intrinsic_value: A number representing the AI's calculated fair value per share in INR based on DCF/Multiples.
-        - valuation_analysis: A 2-sentence explanation of the valuation logic relative to the Indian market.
-        - score_breakdown: { financial_score, sec_score, sentiment_score, trend_score, sector_score, institutional_score }
-        - financial_subscores: { profitability, growth, solvency }
-        - trend_subscores: { 
-            quarterly_momentum: 0-100, 
-            annual_stability: 0-100 
-          }
-        - sector_subscores: {
-            outperformance: 0-100 (vs sector peers),
-            seasonality_strength: 0-100,
-            rotation_inflow: 0-100
-          }
-        - institutional_subscores: {
-            analyst_conviction: 0-100,
-            insider_signal: 0-100,
-            earnings_reliability: 0-100
-          }
-        - financial_formula: A short string explaining the weighted score formula.
-        - financial_score_drivers: Array of objects { label, impact: 'positive'|'negative' }.
-        - prometheus_score: (financial_score * 0.40) + (trend_score * 0.20) + (sec_score * 0.10) + (sentiment_score * 0.10) + (sector_score * 0.10) + (institutional_score * 0.10)
-        - score_criteria: A short explanation of why the company got this score.
-        - metrics: An array of 25-30 objects { "label": string, "value": string, "status": "positive"|"neutral"|"negative", "shortExplanation": string, "technicalDefinition": string }. 
-          REQUIRED METRICS (Exhaustive List): 
-          1. Current Price, 2. Market Cap, 3. 52-Week High, 4. 52-Week Low, 5. Revenue (TTM & Recent Fiscal), 6. Net Income (TTM & Recent Fiscal), 7. EPS (TTM & Recent Fiscal), 8. Forecasted Revenue (FY25/Next), 9. Forecasted Net Income (FY25/Next), 10. P/E Ratio (TTM), 11. Price to Sales (TTM), 12. Price to Book, 13. Dividend Yield, 14. Return on Equity (ROE) & ROI, 15. Revenue Growth (TTM & 5-Year CAGR), 16. Current Ratio, 17. Quick Ratio, 18. Debt to Equity, 19. LT Debt to Equity, 20. Interest Coverage Ratio, 21. Cash & Short Term Investments, 22. Operating Profit Margin, 23. Net Profit Margin, 24. FII/Institutional Shareholding, 25. Mutual Fund Shareholding, 26. 50-Day Moving Average, 27. 200-Day Moving Average, 28. Latest Quarterly Revenue, 29. Latest Quarterly Net Profit, 30. Latest Quarterly EPS, 31. Analyst Rating, 32. Price Performance (52-Week), 33. Risk Category.
-          DO NOT put sector analysis here. Use Crores/Lakhs for values where appropriate. Be opinionated with the status based on performance vs history and peers.
-        - bull_case: array of strings
-        - bear_case: array of strings
-
-        IMPORTANT: Ensure all string values are valid JSON (escape double quotes if they appear inside the analysis).
-        Return ONLY valid JSON.
-        `;
-
-            return await generateStructuredAnalysis(prompt);
+        // AI analysis is now generated by Claude Code via /analyze skill.
+        // This Inngest function is deprecated — kept for reference only.
+        const aiAnalysis: any = await step.run("generate-ai-insights-india", async () => {
+            throw new Error("Gemini removed. Use Claude Code /analyze skill instead.");
         });
 
         await step.run("update-status-persisting", async () => {
