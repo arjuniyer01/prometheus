@@ -4,19 +4,17 @@
  *
  * Usage: npx tsx scripts/fetch-stock-data.ts AAPL [US|INDIA]
  */
-import dotenv from 'dotenv';
-dotenv.config({ path: '.env.local' });
 
-// Capture the real stdout.write before anything else can pollute it
+// Capture the real stdout.write BEFORE any imports can pollute it
 const realStdoutWrite = process.stdout.write.bind(process.stdout);
-const outputBuffer: string[] = [];
 
-// Hijack stdout to prevent yahoo-finance2 notices from polluting JSON output
-// All our output goes through outputBuffer, everything else goes to stderr
+// Hijack stdout to prevent dotenv/yahoo-finance2 notices from polluting JSON output
 process.stdout.write = (chunk: any, ...args: any[]) => {
-    // Redirect any unexpected stdout writes to stderr
     return process.stderr.write(chunk, ...(args as [any]));
 };
+
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 
 import { resolve } from 'path';
 
