@@ -49,6 +49,8 @@ export const getReportMarkdown = ({
             md += `  - *Profitability:* ${meta.financial_subscores.profitability}/100\n`;
             md += `  - *Growth:* ${meta.financial_subscores.growth}/100\n`;
             md += `  - *Solvency:* ${meta.financial_subscores.solvency}/100\n`;
+            if (meta.financial_subscores.valuation != null) md += `  - *Valuation:* ${meta.financial_subscores.valuation}/100\n`;
+            if (meta.financial_subscores.cashFlow != null) md += `  - *Cash Flow:* ${meta.financial_subscores.cashFlow}/100\n`;
         }
         md += `- **Regulatory/SEC Pulse:** ${meta.score_breakdown.sec_score}/100\n`;
         md += `- **Market Sentiment:** ${meta.score_breakdown.sentiment_score}/100\n`;

@@ -111,7 +111,7 @@ scripts/                                # Integration test utilities
 
 1. **Yahoo Finance Only** — Universal data source. No FMP/Finnhub (legacy, commented out).
 2. **Claude Code is the AI Engine** — Analysis runs via `/analyze` skill. Inngest is deprecated.
-3. **Deterministic + AI Scoring** — 60% deterministic (health + momentum), 40% AI qualitative. Never fully AI-driven.
+3. **Deterministic + AI Scoring** — 60% deterministic (financial health 40% + technical momentum 20%), 40% AI qualitative. Financial uses continuous scoring curves across profitability, growth, solvency (sector-aware D/E), valuation (P/E + EV/EBITDA), and cash flow (FCF yield). Technical uses SMA200 distance, 3-month relative strength, and 2x volume breakout. Never fully AI-driven.
 4. **Structured AI Output** — Claude must return JSON: summary, bull_case[], bear_case[], metrics[], sentiment_score, analogy, score_breakdown.
 5. **No Editorialization** — AI explains financials in layman's terms but doesn't recommend buy/sell.
 6. **Atomic Commits** — One logical change per commit, independently revertable.

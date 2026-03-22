@@ -154,20 +154,22 @@ export const analyzeTicker = inngest.createFunction(
 
         const computedSma200 = (data.historicalPrices && data.historicalPrices.length >= 200)
             ? (data.historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
-            : 0;
+            : null;
+
+        const volumeRatio = (data.quote?.volume && data.quote?.avgVolume && data.quote.avgVolume > 0)
+            ? data.quote.volume / data.quote.avgVolume : null;
 
         const deterministicScore = calculateDeterministicScore({
             roe: data.ratios?.roe || 0,
             netMargin: data.ratios?.netProfitMargin || 0,
             revenueGrowth: lastQuartersRevGrowth,
-            debtToEquity: (data.ratios?.debtToEquity || 0) / 100, // Yahoo uses % (e.g. 150), we scrore on ratio (1.5)
+            debtToEquity: (data.ratios?.debtToEquity || 0) / 100,
             interestCoverage: data.ratios?.interestCoverage,
             currentPrice: data.quote?.price || 0,
             sma200: computedSma200,
-            momentumAnalysis: {
-                isOutperformingSector: (data.quote?.changesPercentage || 0) > (Array.isArray(sectorData.current) ? 0 : (sectorData.current as any)?.changesPercentage || 0),
-                volumeBreakout: (data.quote?.volume || 0) > (data.quote?.avgVolume || 0)
-            },
+            volumeRatio,
+            sector: data.profile?.sector || null,
+            marketCap: data.quote?.marketCap || data.profile?.mktCap || null,
             market: 'US'
         });
 

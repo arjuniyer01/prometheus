@@ -288,20 +288,24 @@ export const analyzeTickerIndia = inngest.createFunction(
             lastQuartersRevGrowth = (data.ratios as any).revenueGrowth;
         }
 
+        const computedSma200India = (data.historicalPrices && data.historicalPrices.length > 200)
+            ? (data.historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
+            : null;
+
+        const volumeRatioIndia = (data.profile?.volume && data.profile?.averageVolume && data.profile.averageVolume > 0)
+            ? data.profile.volume / data.profile.averageVolume : null;
+
         const deterministicScore = calculateDeterministicScore({
             roe: (data.ratios as any)?.roe || 0,
             netMargin: (data.ratios as any)?.netProfitMargin || 0,
             revenueGrowth: lastQuartersRevGrowth,
-            debtToEquity: ((data.ratios as any)?.debtToEquity || 0) / 100, // Normalize % to Ratio
-            interestCoverage: 0,
+            debtToEquity: ((data.ratios as any)?.debtToEquity || 0) / 100,
+            interestCoverage: undefined,
             currentPrice: data.profile?.price || 0,
-            sma200: (data.historicalPrices && data.historicalPrices.length > 200)
-                ? (data.historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
-                : 0,
-            momentumAnalysis: {
-                isOutperformingSector: (data.profile?.changesPercentage || 0) > ((data.sectorData as any)?.indexHistory?.[0]?.changesPercentage || 0),
-                volumeBreakout: (data.profile?.averageVolume || 0) > 0 && (data.profile?.volume || 0) > (data.profile?.averageVolume || 0)
-            },
+            sma200: computedSma200India,
+            volumeRatio: volumeRatioIndia,
+            sector: data.profile?.sector || null,
+            marketCap: data.profile?.mktCap || null,
             market: 'INDIA'
         });
 

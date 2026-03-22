@@ -16,8 +16,6 @@ process.stdout.write = (chunk: any, ...args: any[]) => {
 import dotenv from 'dotenv';
 dotenv.config({ path: '.env.local' });
 
-import { resolve } from 'path';
-
 const symbol = process.argv[2];
 const market = (process.argv[3] || 'US').toUpperCase();
 
@@ -38,6 +36,28 @@ async function main() {
     } else {
         await fetchUSData(symbol, yahooFinance, newsRss, scoringEngine);
     }
+}
+
+/**
+ * Compute 3-month return from historical prices.
+ * Expects prices sorted newest-first.
+ */
+function computeThreeMonthReturn(prices: any[]): number | null {
+    if (!prices || prices.length < 63) return null;
+    const current = prices[0]?.close;
+    const threeMonthsAgo = prices[Math.min(62, prices.length - 1)]?.close;
+    if (!current || !threeMonthsAgo || threeMonthsAgo === 0) return null;
+    return (current - threeMonthsAgo) / threeMonthsAgo;
+}
+
+/**
+ * Compute SMA200 from historical prices (newest-first).
+ * Returns null if insufficient data.
+ */
+function computeSma200(prices: any[]): number | null {
+    if (!prices || prices.length < 200) return null;
+    const sum = prices.slice(0, 200).reduce((acc: number, val: any) => acc + (val.close || 0), 0);
+    return sum / 200;
 }
 
 async function fetchUSData(ticker: string, yf: any, newsRss: any, scoring: any) {
@@ -71,33 +91,62 @@ async function fetchUSData(ticker: string, yf: any, newsRss: any, scoring: any) 
 
     console.error(`[FETCH] Got all supplementary data`);
 
-    // Calculate deterministic score
+    // --- Revenue growth: prefer quarterly YoY, fallback to metrics ---
     let lastQuartersRevGrowth = 0;
     if (quarterlyIncome && quarterlyIncome.length >= 5) {
         try {
-            lastQuartersRevGrowth = ((quarterlyIncome[0].revenue - quarterlyIncome[4].revenue) / quarterlyIncome[4].revenue);
+            const currentRev = quarterlyIncome[0].revenue;
+            const yearAgoRev = quarterlyIncome[4].revenue;
+            if (yearAgoRev && yearAgoRev !== 0) {
+                lastQuartersRevGrowth = (currentRev - yearAgoRev) / yearAgoRev;
+            }
         } catch { lastQuartersRevGrowth = 0; }
     }
     if (!lastQuartersRevGrowth && metrics?.revenueGrowth) {
         lastQuartersRevGrowth = metrics.revenueGrowth;
     }
 
-    const computedSma200 = (historicalPrices && historicalPrices.length >= 200)
-        ? (historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
-        : 0;
+    // --- SMA200: null if insufficient data ---
+    const sma200 = computeSma200(historicalPrices);
+
+    // --- 3-month return ---
+    const threeMonthReturn = computeThreeMonthReturn(historicalPrices);
+
+    // --- Volume ratio ---
+    const volumeRatio = (quote?.volume && quote?.avgVolume && quote.avgVolume > 0)
+        ? quote.volume / quote.avgVolume
+        : null;
+
+    // --- FCF Yield ---
+    let fcfYield: number | null = null;
+    const mktCap = quote?.marketCap || profile?.mktCap;
+    if (metrics?.freeCashFlow && mktCap && mktCap > 0) {
+        fcfYield = metrics.freeCashFlow / mktCap;
+    }
+
+    // --- P/E and EV/EBITDA ---
+    const peRatio = metrics?.pe || profile?.trailingPE || null;
+    const evToEbitda = metrics?.enterpriseToEbitda || null;
+
+    // --- D/E: Yahoo returns as percentage (e.g. 150 = 1.5x ratio) ---
+    const debtToEquity = (metrics?.debtToEquity || 0) / 100;
 
     const deterministicScore = scoring.calculateDeterministicScore({
         roe: metrics?.roe || 0,
         netMargin: metrics?.netProfitMargin || 0,
         revenueGrowth: lastQuartersRevGrowth,
-        debtToEquity: (metrics?.debtToEquity || 0) / 100,
-        interestCoverage: undefined,
+        debtToEquity,
+        interestCoverage: metrics?.interestCoverage || undefined,
+        peRatio,
+        evToEbitda,
+        fcfYield,
         currentPrice: quote?.price || 0,
-        sma200: computedSma200,
-        momentumAnalysis: {
-            isOutperformingSector: (quote?.changesPercentage || 0) > 0,
-            volumeBreakout: (quote?.volume || 0) > (quote?.avgVolume || 0)
-        },
+        sma200,
+        threeMonthReturn,
+        sectorThreeMonthReturn: null, // TODO: fetch sector ETF return
+        volumeRatio,
+        sector: profile?.sector || null,
+        marketCap: mktCap || null,
         market: 'US'
     });
 
@@ -141,6 +190,14 @@ async function fetchIndiaData(ticker: string, scrapers: any, yf: any, scoring: a
     }
     console.error(`[FETCH] Got profile: ${profile.companyName}`);
 
+    // Fetch metrics (ROE, margins, D/E, P/E, etc.) via Yahoo metrics
+    let indiaMetrics: any = null;
+    try {
+        indiaMetrics = await scrapers.getHistoricalStatsIndia(ticker, 'ratios');
+    } catch (e) {
+        console.error(`[FETCH] Could not fetch India metrics, using fallback: ${e}`);
+    }
+
     const [financials, historicalPrices, news, cashFlow, fullAnalysis] = await Promise.all([
         Promise.all([
             scrapers.getFinancialStatementsIndia(ticker, 'quarter_results'),
@@ -160,20 +217,48 @@ async function fetchIndiaData(ticker: string, scrapers: any, yf: any, scoring: a
         scrapers.getSustainabilityIndia(ticker),
     ]);
 
-    // Deterministic score
+    // --- Extract metrics for scoring (from Yahoo metrics or fallback) ---
+    const roe = indiaMetrics?.roe || 0;
+    const netMargin = indiaMetrics?.netProfitMargin || 0;
+    const revenueGrowth = indiaMetrics?.revenueGrowth || 0;
+    const debtToEquity = (indiaMetrics?.debtToEquity || 0) / 100;
+    const peRatio = indiaMetrics?.pe || profile?.trailingPE || null;
+    const evToEbitda = indiaMetrics?.enterpriseToEbitda || null;
+
+    // FCF yield
+    let fcfYield: number | null = null;
+    const mktCap = profile?.mktCap;
+    if (indiaMetrics?.freeCashFlow && mktCap && mktCap > 0) {
+        fcfYield = indiaMetrics.freeCashFlow / mktCap;
+    }
+
+    // SMA200 and 3-month return
+    const sma200 = computeSma200(historicalPrices);
+    const threeMonthReturn = computeThreeMonthReturn(historicalPrices);
+
+    // Volume ratio
+    const volumeRatio = (profile?.volume && profile?.averageVolume && profile.averageVolume > 0)
+        ? profile.volume / profile.averageVolume
+        : null;
+
+    console.error(`[FETCH] India metrics: ROE=${roe}, Margin=${netMargin}, Growth=${revenueGrowth}, D/E=${debtToEquity}`);
+
     const deterministicScore = scoring.calculateDeterministicScore({
-        roe: 0,
-        netMargin: 0,
-        revenueGrowth: 0,
-        debtToEquity: 0,
+        roe,
+        netMargin,
+        revenueGrowth,
+        debtToEquity,
+        interestCoverage: undefined,
+        peRatio,
+        evToEbitda,
+        fcfYield,
         currentPrice: profile?.price || 0,
-        sma200: (historicalPrices && historicalPrices.length > 200)
-            ? (historicalPrices.slice(0, 200).reduce((acc: number, val: any) => acc + val.close, 0) / 200)
-            : 0,
-        momentumAnalysis: {
-            isOutperformingSector: (profile?.changesPercentage || 0) > 0,
-            volumeBreakout: (profile?.volume || 0) > (profile?.averageVolume || 0)
-        },
+        sma200,
+        threeMonthReturn,
+        sectorThreeMonthReturn: null,
+        volumeRatio,
+        sector: profile?.sector || null,
+        marketCap: mktCap || null,
         market: 'INDIA'
     });
 
@@ -185,6 +270,7 @@ async function fetchIndiaData(ticker: string, scrapers: any, yf: any, scoring: a
         fetchedAt: new Date().toISOString(),
         today,
         profile,
+        metrics: indiaMetrics,
         financials,
         historicalPrices,
         news: (news || []).map((n: any) => ({ headline: n.title, source: n.source, date: n.date, url: n.url })),

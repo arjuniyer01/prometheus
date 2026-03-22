@@ -156,7 +156,9 @@ async function main() {
             financial_subscores: aiAnalysis.financial_subscores || {
                 profitability: deterministicScore.breakdown.profitability,
                 growth: deterministicScore.breakdown.growth,
-                solvency: deterministicScore.breakdown.solvency
+                solvency: deterministicScore.breakdown.solvency,
+                valuation: deterministicScore.breakdown.valuation,
+                cashFlow: deterministicScore.breakdown.cashFlow
             },
             trend_subscores: aiAnalysis.trend_subscores || {
                 quarterly_momentum: deterministicScore.breakdown.trend,
