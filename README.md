@@ -1,42 +1,79 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Prometheus
+
+AI-powered financial intelligence terminal. Fetches fundamentals, market data, and news via Yahoo Finance, synthesizes institutional-grade analysis via Claude, and displays it in a Bloomberg-inspired dashboard. Supports US and Indian markets.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev          # Dev server at http://localhost:3000
 ```
 
-Run Inngest:
+## AI Analysis via Claude Code
 
-```bash
-npx inngest-cli@latest dev
+All stock analysis is driven through Claude Code slash commands. No admin dashboard needed.
+
+### Analyze a stock
+
+```
+/analyze NVDA
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Fetches all Yahoo Finance data, generates a full Prometheus analysis (executive summary, bull/bear case, 30+ metrics, qualitative scoring), and persists to the database.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Analyze an Indian market stock
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```
+/analyze RELIANCE INDIA
+```
 
-## Learn More
+### Analyze multiple stocks
 
-To learn more about Next.js, take a look at the following resources:
+```
+/analyze AAPL MSFT GOOG
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Regenerate all existing analyses
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+/regen-all
+```
 
-## Deploy on Vercel
+Re-runs the full analysis pipeline for every ticker already in the database.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Or just ask
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+You can also just say things like:
+- "analyze Tesla"
+- "run a fresh analysis on COST"
+- "regenerate everything"
+
+## Scoring
+
+Prometheus Score (0-100) is a weighted composite:
+
+| Component | Weight | Source |
+|---|---|---|
+| Financial Health | 40% | Deterministic (ROE, margins, growth, solvency) |
+| Technical Momentum | 20% | Deterministic (price vs 200DMA, sector, volume) |
+| SEC/Regulatory | 10% | Claude qualitative |
+| Sentiment | 10% | Claude qualitative |
+| Sector Intelligence | 10% | Claude qualitative |
+| Institutional | 10% | Claude qualitative |
+
+## Stack
+
+- **Next.js 16** (App Router, TypeScript, Tailwind 4) on Vercel
+- **Supabase** PostgreSQL with Realtime
+- **Claude Code** for AI synthesis
+- **Yahoo Finance** (`yahoo-finance2`) as universal data source
+- **Recharts** for financial charting
+
+## Environment
+
+Copy `.env.local.example` to `.env.local` with:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=...
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+```

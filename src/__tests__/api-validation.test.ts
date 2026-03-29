@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { GoogleGenAI } from "@google/genai";
 import { getHistoricalPrices } from "../lib/scrapers";
 
 describe('External API Validation', () => {
     const fmpKey = process.env.FMP_API_KEY;
-    const geminiKey = process.env.GEMINI_API_KEY;
     const finnhubKey = process.env.FINNHUB_API_KEY;
 
     it('FMP API should be accessible and return valid data', async () => {
@@ -19,19 +17,6 @@ describe('External API Validation', () => {
         expect(data[0].symbol).toBe('AAPL');
         expect(data[0].companyName).toBe('Apple Inc.');
     });
-
-    it('Gemini API should be accessible and return valid synthesis', async () => {
-        expect(geminiKey, 'GEMINI_API_KEY is missing').toBeDefined();
-
-        const ai = new GoogleGenAI({ apiKey: geminiKey! });
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite",
-            contents: "Say 'Validation Success'",
-        });
-
-        expect(response.text).toBeDefined();
-        expect(response.text?.toLowerCase()).toContain('validation');
-    }, 15000); // 15s timeout for AI
 
     it('Finnhub API should return valid news structure for UI', async () => {
         expect(finnhubKey, 'FINNHUB_API_KEY is missing').toBeDefined();

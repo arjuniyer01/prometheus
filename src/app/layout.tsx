@@ -10,7 +10,7 @@ const outfit = Outfit({ subsets: ["latin"], variable: "--font-outfit" });
 
 export const metadata: Metadata = {
   title: "Prometheus | Financial Intelligence Platform",
-  description: "Institutional-grade financial research powered by Gemini 3 Flash. Synthesize fundamentals, sentiment, and regulatory filings in a single view.",
+  description: "Institutional-grade financial research powered by Claude. Synthesize fundamentals, sentiment, and regulatory filings in a single view.",
   icons: {
     icon: [
       { url: "/engineer.svg", type: "image/svg+xml" },
